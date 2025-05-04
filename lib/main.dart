@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'screens/user_screen.dart'; 
+import '/utils/supabase_init.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SupabaseInit.initialize();
   runApp(MyApp());
 }
 

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '/screens/content/profile_mitra.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '/login.dart';
 
 class AppBarA extends StatefulWidget implements PreferredSizeWidget {
   @override
@@ -40,7 +43,11 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
           });
         }
       },
-      {'icon': Icons.logout_outlined, 'text': 'Keluar'},
+      {
+        'icon': Icons.logout_outlined, 
+        'text': 'Keluar',
+        'action': _handleLogout // Updated to use the dedicated logout handler
+      },
     ];
 
     _animationController = AnimationController(
@@ -56,6 +63,115 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
     );
 
     _menuOverlay = OverlayEntry(builder: (context) => _buildMenuOverlay());
+  }
+
+  Future<void> _handleLogout(BuildContext context) async {
+    if (_isMenuOpen) {
+      _toggleMenu();
+      await Future.delayed(Duration(milliseconds: 300));
+    }
+
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        contentPadding: EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.logout_rounded, size: 56, color: Color(0xFFF273F0)),
+            SizedBox(height: 16),
+            Text(
+              "Keluar dari Akun?",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[800],
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              "Anda akan keluar dari aplikasi. Yakin ingin melanjutkan?",
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            ),
+            SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 120,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      side: BorderSide(color: Colors.grey[400]!),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text("Batal", style: TextStyle(color: Colors.grey[700])),
+                  ),
+                ),
+                SizedBox(width: 16),
+                SizedBox(
+                  width: 120,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: Color(0xFFF273F0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text("Keluar", style: TextStyle(color: Colors.white)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (shouldLogout == true) {
+      await _performLogout(context);
+    }
+  }
+
+  Future<void> _performLogout(BuildContext context) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // 1. Clear Supabase session
+      await Supabase.instance.client.auth.signOut();
+
+      // 2. Clear local session data
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_id'); // Remove only user_id
+      await prefs.remove('session_expiry'); // Remove session expiry
+
+      // 3. Navigate to login page
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => LoginPage()),
+        (route) => false,
+      );
+    } catch (e) {
+      navigator.pop(); // Close loading dialog
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Gagal logout: ${e.toString()}')),
+      );
+    }
   }
 
   @override
@@ -108,7 +224,6 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
 
     return Stack(
       children: [
-        // Semi-transparent overlay for outside menu area
         if (_isMenuOpen)
           Positioned.fill(
             child: GestureDetector(
@@ -117,7 +232,6 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
             ),
           ),
 
-        // Sidebar menu with slide animation from right
         Positioned(
           top: position.dy + widget.preferredSize.height - 45,
           right: 0,
@@ -185,7 +299,6 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
             action(context);
           } else {
             _toggleMenu();
-            // Handle other menu item actions here
           }
         },
         hoverColor: Color(0xFFF273F0),

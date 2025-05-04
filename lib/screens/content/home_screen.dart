@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '/screens/widget/appbar_a.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '/register.dart';
 
 class HomeContent extends StatefulWidget {
@@ -10,205 +11,289 @@ class HomeContent extends StatefulWidget {
 
 class _HomeContentState extends State<HomeContent> {
   bool _showPopup = false;
+  bool _isCheckingSession = true;
+  bool _temporarilyHidden = false;
+  final supabase = Supabase.instance.client;
+  List<Map<String, dynamic>> _products = [];
+  bool _isLoadingProducts = true;
+  final String _bucketName = 'picture-products'; // Supabase bucket name
 
   @override
   void initState() {
     super.initState();
-    _checkFirstTime();
+    _checkUserSession();
+    supabase.auth.onAuthStateChange.listen((AuthState data) {
+      _handleAuthChange(data.session);
+    });
+    _fetchProducts();
   }
 
-  Future<void> _checkFirstTime() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    bool isFirstTime = prefs.getBool('isFirstTime') ?? true;
+  // Function to format sold count
+  // Function to format sold count with detailed ranges
+String _formatSoldCount(int sold) {
+  if (sold < 10) {
+    return sold.toString();
+  } else if (sold < 100) {
+    return '10+';
+  } else if (sold < 1000) {
+    return '100+';
+  } else if (sold < 10000) {
+    return '1RB+';
+  } else if (sold < 100000) {
+    return '10RB+';
+  } else if (sold < 1000000) {
+    return '100RB+';
+  } else {
+    return '1JT+';
+  }
+}
+
+  Future<void> _fetchProducts() async {
+    try {
+      final response = await supabase
+          .from('products')
+          .select('id, name, price_display, photos, sold')
+          .order('created_at', ascending: false);
+
+      if (mounted) {
+        setState(() {
+          _products = List<Map<String, dynamic>>.from(response);
+          _isLoadingProducts = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingProducts = false;
+        });
+      }
+      print('Error fetching products: $e');
+    }
+  }
+
+  String _getImageUrl(String imagePath) {
+    if (imagePath.isEmpty) return '';
     
-    if (isFirstTime && mounted) {
+    // If it's already a full URL, return as is
+    if (imagePath.startsWith('http')) {
+      return imagePath;
+    }
+    
+    // Get the public URL from Supabase Storage
+    final String publicUrl = supabase
+        .storage
+        .from(_bucketName)
+        .getPublicUrl(imagePath);
+    
+    return publicUrl;
+  }
+
+  void _handleAuthChange(Session? session) async {
+    if (mounted) {
+      final prefs = await SharedPreferences.getInstance();
+      final hasUserId = prefs.getString('user_id') != null;
+      
       setState(() {
-        _showPopup = true;
+        _showPopup = (session == null && !hasUserId) && !_temporarilyHidden;
+        _isCheckingSession = false;
       });
-      await prefs.setBool('isFirstTime', false);
+      
+      if (_showPopup) {
+        _showRegisterDialog();
+      }
+    }
+  }
+   
+  Future<void> _checkUserSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final hasUserId = prefs.getString('user_id') != null;
+      final session = supabase.auth.currentSession;
+      
+      if (mounted) {
+        setState(() {
+          _showPopup = (session == null && !hasUserId) && !_temporarilyHidden;
+          _isCheckingSession = false;
+        });
+        
+        if (_showPopup) {
+          _showRegisterDialog();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isCheckingSession = false;
+          _showPopup = !_temporarilyHidden;
+        });
+        
+        if (_showPopup) {
+          _showRegisterDialog();
+        }
+      }
     }
   }
 
   void _navigateToRegister(BuildContext context) {
+    Navigator.pop(context); // Close the dialog first
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => RegisterPage()),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBarA(),
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            child: Column(
-              children: [
-                SizedBox(height: 4),
-                // Banner
-                Container(
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.asset(
-                      'assets/images/banner.png',
-                      width: double.infinity,
-                      height: 120,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
+  Future<void> _showRegisterDialog() async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent closing by tapping outside
+      builder: (BuildContext context) {
+        return AlertDialog(
+          contentPadding: EdgeInsets.zero,
+          backgroundColor: Colors.transparent,
+          insetPadding: EdgeInsets.all(24),
+          content: Container(
+            constraints: const BoxConstraints(maxWidth: 350),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.2),
+                  spreadRadius: 2,
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
                 ),
-                // Products
-                Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ProductCard(
-                              imageUrl: 'assets/images/war1.png',
-                              title: 'Sunscreen Wardah',
-                              price: 'Rp.35.000-50.000',
-                              sold: '5RB+ terjual',
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: ProductCard(
-                              imageUrl: 'assets/images/war2.png',
-                              title: 'Serum Skintific',
-                              price: 'Rp.90.000',
-                              sold: '1RB+ terjual',
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ProductCard(
-                              imageUrl: 'assets/images/war3.png',
-                              title: 'Cushion Instaperfect',
-                              price: 'Rp.160.000',
-                              sold: '2RB+ terjual',
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: ProductCard(
-                              imageUrl: 'assets/images/war4.png',
-                              title: 'Moisturizer Glad2glow',
-                              price: 'Rp.35.000',
-                              sold: '10RB+ terjual',
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ProductCard(
-                              imageUrl: 'assets/images/war3.png',
-                              title: 'Cushion Instaperfect',
-                              price: 'Rp.160.000',
-                              sold: '2RB+ terjual',
-                            ),
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: ProductCard(
-                              imageUrl: 'assets/images/war4.png',
-                              title: 'Moisturizer Glad2glow',
-                              price: 'Rp.35.000',
-                              sold: '10RB+ terjual',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Untuk bisa menikmati fitur aplikasi ini silahkan daftar terlebih dahulu',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
                   ),
+                  textAlign: TextAlign.start,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Tanpa daftar terlebih dahulu, anda tidak bisa mengakses aplikasi ini. Apakah anda ingin mendaftar?',
+                  style: TextStyle(color: Colors.grey[700], fontSize: 16),
+                  textAlign: TextAlign.start,
+                ),
+                const SizedBox(height: 21),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _temporarilyHidden = true;
+                        });
+                        Navigator.pop(context);
+                      },
+                      child: const Text(
+                        'Sudah Daftar',
+                        style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 21),
+                    TextButton(
+                      onPressed: () => _navigateToRegister(context),
+                      child: const Text(
+                        'Daftar',
+                        style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          if (_showPopup)
-            AnimatedOpacity(
-              opacity: _showPopup ? 1.0 : 0.0,
-              duration: Duration(milliseconds: 500),
-              child: Center(
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 300),
-                  margin: const EdgeInsets.all(24),
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.2),
-                        spreadRadius: 2,
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Untuk bisa menikmati fitur aplikasi ini silahkan daftar terlebih dahulu',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                        ),
-                        textAlign: TextAlign.start,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Tanpa daftar terlebih dahulu, anda tidak bisa mengakses aplikasi ini. Apakah anda ingin mendaftar?',
-                        style: TextStyle(color: Colors.grey[700], fontSize: 16),
-                        textAlign: TextAlign.start,
-                      ),
-                      const SizedBox(height: 21),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () {
-                              setState(() {
-                                _showPopup = false;
-                              });
-                            },
-                            child: const Text(
-                              'Sudah Daftar',
-                              style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          const SizedBox(width: 21),
-                          TextButton(
-                            onPressed:() => _navigateToRegister(context),
-                            child: const Text(
-                              'Daftar',
-                              style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isCheckingSession) {
+      return Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+    
+    return Scaffold(
+      appBar: AppBarA(),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            SizedBox(height: 4),
+            // Banner
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/images/banner.png',
+                  width: double.infinity,
+                  height: 120,
+                  fit: BoxFit.cover,
                 ),
               ),
             ),
-        ],
+            // Products
+            Padding(
+              padding: EdgeInsets.all(16),
+              child: _isLoadingProducts
+                  ? Center(child: CircularProgressIndicator())
+                  : _buildProductGrid(),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildProductGrid() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Tentukan jumlah kolom berdasarkan lebar layar
+        final crossAxisCount = constraints.maxWidth > 600 ? 4 : 2;
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount, // 2 cards per row
+            childAspectRatio: 0.75, // Adjust this value to change card proportions
+            mainAxisSpacing: 16, // Space between rows
+            crossAxisSpacing: 16, // Space between columns
+          ),
+          itemCount: _products.length,
+          itemBuilder: (context, index) {
+            final product = _products[index];
+            final imageUrl = _getImageUrl(product['photos'] ?? '');
+            final soldCount = product['sold'] ?? 0;
+            final formattedSold = _formatSoldCount(soldCount is int ? soldCount : int.tryParse(soldCount.toString()) ?? 0);
+            
+            return ProductCard(
+              imageUrl: imageUrl,
+              title: product['name'] ?? 'No Name',
+              price: 'Rp.${product['price_display']?.toString() ?? '0'}',
+              sold: '$formattedSold terjual',
+            );
+          },
+        );
+      }
     );
   }
 }
@@ -228,29 +313,61 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cardWidth = (MediaQuery.of(context).size.width - 48) / 2; // Calculate width based on screen width minus padding and spacing
+    
     return Card(
       elevation: 4,
       color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: SizedBox(
-        height: 235,
+        width: cardWidth, // Fixed width
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
+            // Square image container
+            AspectRatio(
+              aspectRatio: 1, // This makes it square
               child: ClipRRect(
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(12),
-                  topRight: Radius.circular(12),
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(12),
                 ),
-                child: Image.asset(
-                  imageUrl,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
+                child: imageUrl.isNotEmpty
+                    ? Image.network(
+                        imageUrl,
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) => 
+                            Image.asset(
+                              'assets/images/placeholder.png',
+                              width: double.infinity,
+                              height: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                      )
+                    : Image.asset(
+                        'assets/images/placeholder.png',
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
               ),
             ),
             Padding(
-              padding: EdgeInsets.all(8),
+              padding: EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -261,6 +378,8 @@ class ProductCard extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   SizedBox(height: 4),
                   Text(

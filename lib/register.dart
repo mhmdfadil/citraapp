@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'login.dart'; // Import halaman Login
 
 class RegisterPage extends StatefulWidget {
@@ -11,6 +14,9 @@ class _RegisterPageState extends State<RegisterPage> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _hpController = TextEditingController();
+  
+  // Inisialisasi Supabase client
+  final supabase = Supabase.instance.client;
 
   void _showSuccessNotification(BuildContext context) {
     OverlayEntry overlayEntry;
@@ -49,36 +55,118 @@ class _RegisterPageState extends State<RegisterPage> {
       ),
     );
 
-    // Menampilkan overlay
     Overlay.of(context).insert(overlayEntry);
 
-    // Menghapus overlay setelah beberapa detik
     Future.delayed(Duration(seconds: 2), () {
       overlayEntry.remove();
     });
   }
 
-  void _register(BuildContext context) {
-    if (_formKey.currentState!.validate()) {
-      _showSuccessNotification(context);
+  void _showErrorNotification(BuildContext context, String message) {
+    OverlayEntry overlayEntry;
+    overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: 42,
+        right: 10,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error, color: Colors.red),
+                SizedBox(width: 8),
+                Text(
+                  message,
+                  style: TextStyle(color: Colors.red),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
 
-      // Navigasi ke halaman Login setelah registrasi berhasil
-      Future.delayed(Duration(seconds: 1), () {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => LoginPage()),
-        );
-      });
+    Overlay.of(context).insert(overlayEntry);
+
+    Future.delayed(Duration(seconds: 2), () {
+      overlayEntry.remove();
+    });
+  }
+
+  // Function to hash password using SHA-256
+  String _hashPassword(String password) {
+    var bytes = utf8.encode(password);
+    var digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
+  // Function to check if username exists
+  Future<bool> _isUsernameAvailable(String username) async {
+    final response = await supabase
+        .from('users')
+        .select()
+        .eq('username', username)
+        .maybeSingle();
+
+    return response == null;
+  }
+
+  Future<void> _register(BuildContext context) async {
+    if (_formKey.currentState!.validate()) {
+      try {
+        // Check if username is available
+        final isAvailable = await _isUsernameAvailable(_usernameController.text);
+        if (!isAvailable) {
+          _showErrorNotification(context, 'Username already exists');
+          return;
+        }
+
+        // Hash the password
+        final hashedPassword = _hashPassword(_passwordController.text);
+
+        // Insert data to users table
+        await supabase.from('users').insert({
+          'username': _usernameController.text,
+          'password': hashedPassword,
+          'roles': 'User',
+          'no_hp': _hpController.text,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+
+        _showSuccessNotification(context);
+
+        // Navigasi ke halaman Login setelah registrasi berhasil
+        Future.delayed(Duration(seconds: 1), () {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => LoginPage()),
+          );
+        });
+      } catch (e) {
+        _showErrorNotification(context, 'Registration failed: ${e.toString()}');
+      }
     }
   }
 
-    void _navigateToLogin(BuildContext context) {
+  void _navigateToLogin(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => LoginPage()), // Pindah ke halaman Register
+      MaterialPageRoute(builder: (context) => LoginPage()),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -131,13 +219,13 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                   validator: (value) => value!.isEmpty ? 'Username cannot be empty' : null,
                 ),
-                 SizedBox(height: 16),
+                SizedBox(height: 16),
                 TextFormField(
                   controller: _hpController,
                   style: TextStyle(fontSize: 16, color: Colors.black),
                   decoration: InputDecoration(
                     labelText: 'Mobile number',
-                    prefixIcon: Icon(Icons.person, color: Colors.black),
+                    prefixIcon: Icon(Icons.phone, color: Colors.black), // Ganti icon ke phone
                     filled: true,
                     fillColor: Color(0xFFD9D9D9),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(25)),
@@ -150,8 +238,12 @@ class _RegisterPageState extends State<RegisterPage> {
                       borderRadius: BorderRadius.circular(25),
                     ),
                   ),
-                   keyboardType: TextInputType.number, // Hanya menampilkan keyboard angka
-                  validator: (value) => value!.isEmpty ? 'Mobile number cannot be empty' : null,
+                  keyboardType: TextInputType.phone, // Ganti ke phone untuk nomor HP
+                  validator: (value) {
+                    if (value!.isEmpty) return 'Mobile number cannot be empty';
+                    if (!RegExp(r'^[0-9]+$').hasMatch(value)) return 'Only numbers allowed';
+                    return null;
+                  },
                 ),
                 SizedBox(height: 16),
                 TextFormField(
@@ -173,7 +265,11 @@ class _RegisterPageState extends State<RegisterPage> {
                       borderRadius: BorderRadius.circular(25),
                     ),
                   ),
-                  validator: (value) => value!.isEmpty ? 'Password cannot be empty' : null,
+                  validator: (value) {
+                    if (value!.isEmpty) return 'Password cannot be empty';
+                    if (value.length < 6) return 'Password must be at least 6 characters';
+                    return null;
+                  },
                 ),
                 
                 SizedBox(height: 38),
@@ -217,5 +313,13 @@ class _RegisterPageState extends State<RegisterPage> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _hpController.dispose();
+    super.dispose();
   }
 }

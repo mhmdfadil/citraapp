@@ -13,35 +13,52 @@ class BottomAppBarA extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BottomAppBar(
-      color: Colors.white,
-      height: 60, // Reduced height from default (usually 80)
-      padding: EdgeInsets.zero, // Remove default padding
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: List.generate(4, (index) {
-          return IconButton(
-            padding: EdgeInsets.zero, // Remove default padding
-            constraints: const BoxConstraints(), // Remove minimum size constraints
-            icon: Container(
-              padding: const EdgeInsets.all(12), // Further reduced padding
-              decoration: BoxDecoration(
-                color: selectedIndex == index 
-                    ? Colors.grey[300] 
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                _getIconForIndex(index),
-                color: selectedIndex == index 
-                    ? Colors.black 
-                    : Colors.grey,
-                size: 22, // Slightly smaller icon size
-              ),
-            ),
-            onPressed: () => onItemSelected(index),
-          );
-        }),
+    return Container(
+      // This container adds the shadow and z-index effect
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            spreadRadius: 2,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Material(
+        // Material widget helps with elevation and z-index
+        elevation: 4,
+        child: BottomAppBar(
+          color: Colors.white,
+          height: 60, // Reduced height from default (usually 80)
+          padding: EdgeInsets.zero, // Remove default padding
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(4, (index) {
+              return IconButton(
+                padding: EdgeInsets.zero, // Remove default padding
+                constraints: const BoxConstraints(), // Remove minimum size constraints
+                icon: Container(
+                  padding: const EdgeInsets.all(12), // Further reduced padding
+                  decoration: BoxDecoration(
+                    color: selectedIndex == index 
+                        ? Colors.grey[300] 
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    _getIconForIndex(index),
+                    color: selectedIndex == index 
+                        ? Colors.black 
+                        : Colors.grey,
+                    size: 22, // Slightly smaller icon size
+                  ),
+                ),
+                onPressed: () => onItemSelected(index),
+              );
+            }),
+          ),
+        ),
       ),
     );
   }
