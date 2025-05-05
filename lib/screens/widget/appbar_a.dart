@@ -12,13 +12,16 @@ class AppBarA extends StatefulWidget implements PreferredSizeWidget {
   Size get preferredSize => Size.fromHeight(84);
 }
 
-class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
+class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin  {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   bool _isMenuOpen = false;
   late AnimationController _animationController;
-  late Animation<Offset> _slideAnimation;
+  late Animation<double> _slideAnimation;
   late OverlayEntry _menuOverlay;
+  bool _isCategoryDropdownOpen = false;
+  List<Map<String, dynamic>> _categories = [];
+  late AnimationController _dropdownAnimationController;
 
   late final List<Map<String, dynamic>> _menuItems;
 
@@ -28,7 +31,11 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
 
     _menuItems = [
       {'icon': Icons.menu_outlined, 'isFirstItem': true, 'onTap': true},
-      {'icon': Icons.dashboard_outlined, 'text': 'Kategori Produk'},
+      {
+        'icon': Icons.dashboard_outlined,
+        'text': 'Kategori Produk',
+        'action': _toggleCategoryDropdown
+      },
       {'icon': Icons.credit_card_outlined, 'text': 'Status Pesanan'},
       {'icon': Icons.settings_outlined, 'text': 'Pengaturan'},
       {
@@ -44,9 +51,9 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
         }
       },
       {
-        'icon': Icons.logout_outlined, 
+        'icon': Icons.logout_outlined,
         'text': 'Keluar',
-        'action': _handleLogout // Updated to use the dedicated logout handler
+        'action': _handleLogout
       },
     ];
 
@@ -55,14 +62,48 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
       duration: Duration(milliseconds: 300),
     );
 
-    _slideAnimation = Tween<Offset>(
-      begin: Offset(1, 0),
-      end: Offset(0, 0),
+    _dropdownAnimationController = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 200),
+    );
+
+   _slideAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
     ).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
 
     _menuOverlay = OverlayEntry(builder: (context) => _buildMenuOverlay());
+    _fetchCategories();
+  }
+
+  Future<void> _fetchCategories() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('categories')
+          .select('id, name')
+          .order('name', ascending: true);
+
+      if (response != null && response is List) {
+        setState(() {
+          _categories = List<Map<String, dynamic>>.from(response);
+        });
+      }
+    } catch (e) {
+      print('Error fetching categories: $e');
+    }
+  }
+
+  void _toggleCategoryDropdown(BuildContext context) {
+    setState(() {
+      _isCategoryDropdownOpen = !_isCategoryDropdownOpen;
+      if (_isCategoryDropdownOpen) {
+        _dropdownAnimationController.forward();
+      } else {
+        _dropdownAnimationController.reverse();
+      }
+    });
   }
 
   Future<void> _handleLogout(BuildContext context) async {
@@ -73,68 +114,82 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
 
     final shouldLogout = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
-        contentPadding: EdgeInsets.all(24),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.logout_rounded, size: 56, color: Color(0xFFF273F0)),
-            SizedBox(height: 16),
-            Text(
-              "Keluar dari Akun?",
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[800],
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              "Anda akan keluar dari aplikasi. Yakin ingin melanjutkan?",
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-            ),
-            SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+      builder: (context) {
+        return Dialog(
+          insetPadding: EdgeInsets.symmetric(horizontal: 20),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
-                  width: 120,
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    style: OutlinedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      side: BorderSide(color: Colors.grey[400]!),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Text("Batal", style: TextStyle(color: Colors.grey[700])),
+                Icon(Icons.logout_rounded, size: 56, color: Color(0xFFF273F0)),
+                SizedBox(height: 16),
+                Text(
+                  "Keluar dari Akun?",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800],
                   ),
                 ),
-                SizedBox(width: 16),
-                SizedBox(
-                  width: 120,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(
-                      padding: EdgeInsets.symmetric(vertical: 12),
-                      backgroundColor: Color(0xFFF273F0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                SizedBox(height: 8),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    "Anda akan keluar dari aplikasi. Yakin ingin melanjutkan?",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+                ),
+                SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          style: OutlinedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            side: BorderSide(color: Colors.grey[400]!),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text("Batal", 
+                              style: TextStyle(color: Colors.grey[700])),
+                        ),
                       ),
                     ),
-                    child: Text("Keluar", style: TextStyle(color: Colors.white)),
-                  ),
+                    SizedBox(width: 16),
+                    Flexible(
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          style: ElevatedButton.styleFrom(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            backgroundColor: Color(0xFFF273F0),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: Text("Keluar", 
+                              style: TextStyle(color: Colors.white)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
 
     if (shouldLogout == true) {
@@ -153,21 +208,17 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
     );
 
     try {
-      // 1. Clear Supabase session
       await Supabase.instance.client.auth.signOut();
-
-      // 2. Clear local session data
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('user_id'); // Remove only user_id
-      await prefs.remove('session_expiry'); // Remove session expiry
+      await prefs.remove('user_id');
+      await prefs.remove('session_expiry');
 
-      // 3. Navigate to login page
       navigator.pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => LoginPage()),
         (route) => false,
       );
     } catch (e) {
-      navigator.pop(); // Close loading dialog
+      navigator.pop();
       scaffoldMessenger.showSnackBar(
         SnackBar(content: Text('Gagal logout: ${e.toString()}')),
       );
@@ -178,6 +229,7 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
   void dispose() {
     _searchController.dispose();
     _animationController.dispose();
+    _dropdownAnimationController.dispose();
     _removeMenuOverlay();
     super.dispose();
   }
@@ -194,6 +246,8 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
         _removeMenuOverlay();
         setState(() {
           _isMenuOpen = false;
+          _isCategoryDropdownOpen = false;
+          _dropdownAnimationController.reset();
         });
         navigationAction();
       });
@@ -212,15 +266,18 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
         _animationController.reverse().then((_) {
           _removeMenuOverlay();
         });
+        _isCategoryDropdownOpen = false;
+        _dropdownAnimationController.reset();
       }
     });
   }
 
-  Widget _buildMenuOverlay() {
+   Widget _buildMenuOverlay() {
     final RenderBox? appBarRenderBox = context.findRenderObject() as RenderBox?;
     if (appBarRenderBox == null) return Container();
     
     final position = appBarRenderBox.localToGlobal(Offset.zero);
+    final screenWidth = MediaQuery.of(context).size.width;
 
     return Stack(
       children: [
@@ -235,55 +292,67 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
         Positioned(
           top: position.dy + widget.preferredSize.height - 45,
           right: 0,
-          child: SlideTransition(
-            position: _slideAnimation,
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                width: 250,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(8),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 10,
-                      spreadRadius: 2,
-                      offset: Offset(0, 2),
+          child: AnimatedBuilder(
+            animation: _slideAnimation,
+            builder: (context, child) {
+              return SlideTransition(
+                position: Tween<Offset>(
+                  begin: Offset(1, 0),
+                  end: Offset(0, 0),
+                ).animate(_animationController),
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    width: screenWidth * 0.7,
+                    constraints: BoxConstraints(
+                      maxWidth: 250,
                     ),
-                  ],
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.only(
+                        bottomLeft: Radius.circular(8),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ..._menuItems.map((item) {
+                          if (item['isFirstItem'] == true) {
+                            return Padding(
+                              padding: EdgeInsets.only(
+                                bottom: 12,
+                                top: 10,
+                                left: 18, 
+                                right: 16,
+                              ),
+                              child: GestureDetector(
+                                onTap: _toggleMenu,
+                                child: Icon(item['icon'], size: 28),
+                              ),
+                            );
+                          }
+                          
+                          return _buildMenuItem(
+                            item['icon'], 
+                            item['text'],
+                            item['action'],
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ..._menuItems.map((item) {
-                      if (item['isFirstItem'] == true) {
-                        return Padding(
-                          padding: EdgeInsets.only(
-                            bottom: 12,
-                            top: 10,
-                            left: 18, 
-                            right: 16,
-                          ),
-                          child: GestureDetector(
-                            onTap: _toggleMenu,
-                            child: Icon(item['icon'], size: 28),
-                          ),
-                        );
-                      }
-                      return _buildMenuItem(
-                        item['icon'], 
-                        item['text'],
-                        item['action'],
-                      );
-                    }),
-                  ],
-                ),
-              ),
-            ),
+              );
+            },
           ),
         ),
       ],
@@ -291,28 +360,107 @@ class _AppBarAState extends State<AppBarA> with SingleTickerProviderStateMixin {
   }
 
   Widget _buildMenuItem(IconData icon, String text, [Function(BuildContext)? action]) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          if (action != null) {
-            action(context);
-          } else {
-            _toggleMenu();
-          }
-        },
-        hoverColor: Color(0xFFF273F0),
-        child: Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-          child: Row(
-            children: [
-              Icon(icon, size: 24, color: Colors.black87),
-              SizedBox(width: 16),
-              Text(text, style: TextStyle(fontSize: 16, color: Colors.black87)),
-            ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              if (text == 'Kategori Produk') {
+                _toggleCategoryDropdown(context);
+              } else if (action != null) {
+                action(context);
+              } else {
+                _toggleMenu();
+              }
+            },
+            hoverColor: Color(0xFFF273F0).withOpacity(0.1),
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+              child: Row(
+                children: [
+                  Icon(icon, size: 24, color: Colors.black87),
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Text(text, 
+                        style: TextStyle(fontSize: 16, color: Colors.black87)),
+                  ),
+                  if (text == 'Kategori Produk')
+                    RotationTransition(
+                      turns: Tween(begin: 0.0, end: 0.5).animate(
+                        CurvedAnimation(
+                          parent: _dropdownAnimationController,
+                          curve: Curves.easeInOut,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.keyboard_arrow_down,
+                        size: 24,
+                        color: Colors.black87,
+                      ),
+                    ),
+
+                ],
+              ),
+            ),
           ),
         ),
+        if (text == 'Kategori Produk')
+          SizeTransition(
+            sizeFactor: _dropdownAnimationController,
+            axisAlignment: 1.0,
+            child: _buildCategoryDropdown(),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryDropdown() {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.only(left: 60, right: 20, bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_categories.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Tidak ada kategori tersedia',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            )
+          else
+            ..._categories.map((category) {
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    print('Selected category: ${category['name']}');
+                    setState(() {
+                      _isCategoryDropdownOpen = false;
+                      _dropdownAnimationController.reverse();
+                    });
+                    _toggleMenu();
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      category['name'],
+                      style: TextStyle(fontSize: 14, color: Colors.black87),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+        ],
       ),
     );
   }

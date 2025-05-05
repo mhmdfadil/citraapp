@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '/login.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -10,42 +15,285 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
-  final List<ChatMessage> _messages = [
-    ChatMessage(
-      text: 'Hai selamat datang di Toko Citra Kosmetik. Apakah bisa saya bantu?',
-      isMe: false,
-    ),
-  ];
+  final SupabaseClient _supabase = Supabase.instance.client;
+  final ScrollController _scrollController = ScrollController();
+  
+  late final RealtimeChannel _chatChannel;
+  List<Map<String, dynamic>> _messages = [];
+  late String _currentUserId;
+  bool _isLoading = true;
+  final String _adminId = '1';
 
   @override
-  void dispose() {
-    _messageController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    initializeDateFormatting('id_ID').then((_) => _loadCurrentUserId());
   }
 
-  void _sendMessage(String text) {
-    if (text.trim().isEmpty) return;
+  Future<void> _loadCurrentUserId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedUserId = prefs.getString('user_id');
+      
+      if (savedUserId == null || savedUserId.isEmpty) {
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => LoginPage()),
+          );
+        }
+        return;
+      }
 
-    setState(() {
-      _messages.add(ChatMessage(text: text, isMe: true));
-      _messageController.clear();
-    });
+      setState(() {
+        _currentUserId = savedUserId;
+      });
 
-    // Scroll to bottom
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+      await _initializeChat();
+      _subscribeToRealtimeUpdates();
+    } catch (e) {
       if (mounted) {
-        final scrollController = PrimaryScrollController.of(context);
-        scrollController?.animateTo(
-          scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => LoginPage()),
         );
       }
-    });
+    }
+  }
+
+  Future<void> _initializeChat() async {
+    try {
+      final response = await _supabase
+          .from('chats')
+          .select()
+          .or('sender.eq.$_currentUserId,recipient.eq.$_currentUserId')
+          .order('created_at', ascending: true);
+
+      if (mounted) {
+        setState(() {
+          _messages = List<Map<String, dynamic>>.from(response);
+          _isLoading = false;
+        });
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendMessage(String text) async {
+    if (text.trim().isEmpty) return;
+
+    final now = DateTime.now();
+    final formattedDate = DateFormat('dd MMMM yyyy', 'id_ID').format(now);
+    final formattedTime = DateFormat('HH:mm', 'id_ID').format(now);
+
+    try {
+      final response = await _supabase.from('chats').insert({
+        'sender': _currentUserId,
+        'recipient': _adminId,
+        'message': text,
+        'date': formattedDate,
+        'time': formattedTime,
+        'created_at': now.toIso8601String(),
+      }).select();
+
+      if (mounted && response != null) {
+        setState(() {
+          _messages.add(response.first as Map<String, dynamic>);
+        });
+        _scrollToBottom();
+      }
+      _messageController.clear();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Send failed: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  Widget _buildWelcomeMessage() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.only(bottom: 8),
+        constraints: const BoxConstraints(maxWidth: 280),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Halo! Selamat datang di Citra Cosmetic',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.purple,
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Terima kasih telah menghubungi kami. Ada yang bisa kami bantu?',
+              style: TextStyle(color: Colors.black87),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(Map<String, dynamic> message, bool isSameSenderAsPrevious, bool isSameDateAsPrevious) {
+    final isMe = message['sender'] == _currentUserId;
+
+    return Column(
+      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        if (!isSameDateAsPrevious)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(message['date'] ?? ''),
+              ),
+            ),
+          ),
+        Row(
+          mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isMe && !isSameSenderAsPrevious)
+              const Padding(
+                padding: EdgeInsets.only(right: 8),
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.purple,
+                  child: Icon(Icons.store, size: 18, color: Colors.white),
+                ),
+              ),
+            if (!isMe && isSameSenderAsPrevious)
+              const SizedBox(width: 40), // Space for avatar when same sender
+            
+            Flexible(
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                decoration: BoxDecoration(
+                  color: isMe ? Colors.purple[400] : Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: Radius.circular(isMe ? 16 : 4),
+                    bottomRight: Radius.circular(isMe ? 4 : 16),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 5,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      message['message'] ?? '',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: isMe ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          message['time'] ?? '',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isMe ? Colors.white70 : Colors.grey[600],
+                          ),
+                        ),
+                        if (isMe)
+                          const Padding(
+                            padding: EdgeInsets.only(left: 4),
+                            child: Icon(Icons.done_all, size: 14, color: Colors.white70),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            if (isMe && !isSameSenderAsPrevious)
+              const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.grey,
+                  child: Icon(Icons.person, size: 18, color: Colors.white),
+                ),
+              ),
+            if (isMe && isSameSenderAsPrevious)
+              const SizedBox(width: 40), // Space for avatar when same sender
+          ],
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // Group messages by date
+    final groupedMessages = <String, List<Map<String, dynamic>>>{};
+    for (var msg in _messages) {
+      final date = msg['date'] ?? DateFormat('dd MMMM yyyy', 'id_ID').format(DateTime.now());
+      groupedMessages.putIfAbsent(date, () => []).add(msg);
+    }
+    
+    // Sort each group by created_at
+    groupedMessages.forEach((key, value) {
+      value.sort((a, b) => (a['created_at'] as String).compareTo(b['created_at'] as String));
+    });
+
+    // Flatten the grouped messages into a single list with date markers
+    final List<Widget> messageWidgets = [];
+    
+    // Always show welcome message at the top
+    messageWidgets.add(_buildWelcomeMessage());
+    
+    // Process each date group
+    groupedMessages.forEach((date, messages) {
+      for (int i = 0; i < messages.length; i++) {
+        final message = messages[i];
+        final isSameDateAsPrevious = i > 0 && messages[i-1]['date'] == message['date'];
+        final isSameSenderAsPrevious = i > 0 && messages[i-1]['sender'] == message['sender'];
+        
+        messageWidgets.add(
+          _buildMessageBubble(message, isSameSenderAsPrevious, isSameDateAsPrevious),
+        );
+      }
+    });
+
     return Scaffold(
       backgroundColor: Color(0xFFF273F0),
       body: Column(
@@ -116,62 +364,20 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ),
 
-          // Chat messages container
+          // Chat content
           Expanded(
-            child: Container(
-              color: Colors.grey[50],
-              padding: const EdgeInsets.all(16),
-              child: ListView.builder(
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
-                  final message = _messages[index];
-                  return Align(
-                    alignment:
-                        message.isMe ? Alignment.centerRight : Alignment.centerLeft,
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 280),
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: message.isMe ? Colors.pink[200] : Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (!message.isMe)
-                            const FaIcon(
-                              FontAwesomeIcons.store,
-                              size: 20,
-                              color: Colors.purple,
-                            ),
-                          if (!message.isMe) const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              message.text,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: message.isMe
-                                    ? Colors.black.withOpacity(0.8)
-                                    : Colors.black,
-                              ),
-                            ),
-                          ),
-                          if (message.isMe) const SizedBox(width: 8),
-                          if (message.isMe)
-                            const FaIcon(
-                              FontAwesomeIcons.userCircle,
-                              size: 20,
-                              color: Colors.black,
-                            ),
-                        ],
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : Container(
+                    color: Colors.grey[50],
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      child: Column(
+                        children: messageWidgets,
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
+                  ),
           ),
 
           // Input and quick replies container
@@ -238,31 +444,53 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Widget _buildQuickReply(String text) {
-    return GestureDetector(
-      onTap: () => _sendMessage(text),
-      child: Container(
-        width: 280,
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 14,
-            color: Colors.black,
-          ),
-          softWrap: true,
-        ),
-      ),
+    return ActionChip(
+      label: Text(text),
+      onPressed: () => _sendMessage(text),
+      backgroundColor: Colors.white,
     );
   }
-}
 
-class ChatMessage {
-  final String text;
-  final bool isMe;
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
 
-  ChatMessage({required this.text, required this.isMe});
+  void _subscribeToRealtimeUpdates() {
+    _chatChannel = _supabase.channel('public:chats')
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'chats',
+        callback: (payload) {
+          if (payload.eventType == 'INSERT') {
+            final newMessage = payload.newRecord;
+            if ((newMessage['sender'] == _currentUserId || 
+                newMessage['recipient'] == _currentUserId)) {
+              if (mounted) {
+                setState(() {
+                  _messages.add(newMessage);
+                });
+                _scrollToBottom();
+              }
+            }
+          }
+        },
+      ).subscribe();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    _supabase.removeChannel(_chatChannel);
+    super.dispose();
+  }
 }

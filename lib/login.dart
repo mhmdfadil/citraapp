@@ -138,7 +138,7 @@ class _LoginPageState extends State<LoginPage> {
         if (response == null) {
           _showNotification(
             context,
-            message: 'Username tidak ditemukan',
+            message: 'Username not found',
             isSuccess: false,
           );
           return;
@@ -148,7 +148,7 @@ class _LoginPageState extends State<LoginPage> {
         if (response['password'] != hashedPassword) {
           _showNotification(
             context,
-            message: 'Password salah',
+            message: 'Incorrect password',
             isSuccess: false,
           );
           return;
@@ -158,7 +158,7 @@ class _LoginPageState extends State<LoginPage> {
         if (response['roles'] != 'User') {
           _showNotification(
             context,
-            message: 'Anda tidak memiliki akses',
+            message: 'You do not have access',
             isSuccess: false,
           );
           return;
@@ -169,7 +169,7 @@ class _LoginPageState extends State<LoginPage> {
 
         _showNotification(
           context,
-          message: 'Login Berhasil',
+          message: 'Login successful',
           isSuccess: true,
         );
 
@@ -239,7 +239,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   SizedBox(height: 3),
                   Text(
-                    'Silakan masuk untuk melanjutkan',
+                    'Please Sign in to continue',
                     style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                   ),
                   SizedBox(height: 20),
@@ -261,7 +261,7 @@ class _LoginPageState extends State<LoginPage> {
                         borderRadius: BorderRadius.circular(25),
                       ),
                     ),
-                    validator: (value) => value!.isEmpty ? 'Username tidak boleh kosong' : null,
+                    validator: (value) => value!.isEmpty ? 'Username cannot be empty' : null,
                   ),
                   SizedBox(height: 16),
                   TextFormField(
@@ -283,7 +283,7 @@ class _LoginPageState extends State<LoginPage> {
                         borderRadius: BorderRadius.circular(25),
                       ),
                     ),
-                    validator: (value) => value!.isEmpty ? 'Password tidak boleh kosong' : null,
+                    validator: (value) => value!.isEmpty ? 'Password cannot be empty' : null,
                   ),
                   SizedBox(height: 38),
                   SizedBox(
@@ -300,7 +300,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       child: _isLoading 
                           ? CircularProgressIndicator(color: Colors.white)
-                          : Text('Masuk', style: TextStyle(fontSize: 16)),
+                          : Text('Login', style: TextStyle(fontSize: 16)),
                     ),
                   ),
                   SizedBox(height: 8),
@@ -309,11 +309,11 @@ class _LoginPageState extends State<LoginPage> {
                       onTap: _isLoading ? null : () => _navigateToRegister(context),
                       child: Text.rich(
                         TextSpan(
-                          text: 'Belum punya akun? ',
+                          text: 'Don\'t have an account? ',
                           style: TextStyle(color: Colors.grey[600], fontSize: 16),
                           children: [
                             TextSpan(
-                              text: 'Daftar',
+                              text: 'Sign Up',
                               style: TextStyle(
                                 color: Colors.black,
                                 fontSize: 16,

@@ -13,6 +13,7 @@ class _HomeContentState extends State<HomeContent> {
   bool _showPopup = false;
   bool _isCheckingSession = true;
   bool _temporarilyHidden = false;
+  bool _popupShown = false; // Track if popup has been shown
   final supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _products = [];
   bool _isLoadingProducts = true;
@@ -28,25 +29,24 @@ class _HomeContentState extends State<HomeContent> {
     _fetchProducts();
   }
 
-  // Function to format sold count
   // Function to format sold count with detailed ranges
-String _formatSoldCount(int sold) {
-  if (sold < 10) {
-    return sold.toString();
-  } else if (sold < 100) {
-    return '10+';
-  } else if (sold < 1000) {
-    return '100+';
-  } else if (sold < 10000) {
-    return '1RB+';
-  } else if (sold < 100000) {
-    return '10RB+';
-  } else if (sold < 1000000) {
-    return '100RB+';
-  } else {
-    return '1JT+';
+  String _formatSoldCount(int sold) {
+    if (sold < 10) {
+      return sold.toString();
+    } else if (sold < 100) {
+      return '10+';
+    } else if (sold < 1000) {
+      return '100+';
+    } else if (sold < 10000) {
+      return '1RB+';
+    } else if (sold < 100000) {
+      return '10RB+';
+    } else if (sold < 1000000) {
+      return '100RB+';
+    } else {
+      return '1JT+';
+    }
   }
-}
 
   Future<void> _fetchProducts() async {
     try {
@@ -89,7 +89,7 @@ String _formatSoldCount(int sold) {
   }
 
   void _handleAuthChange(Session? session) async {
-    if (mounted) {
+    if (mounted && !_popupShown) { // Only handle if popup hasn't been shown
       final prefs = await SharedPreferences.getInstance();
       final hasUserId = prefs.getString('user_id') != null;
       
@@ -110,7 +110,7 @@ String _formatSoldCount(int sold) {
       final hasUserId = prefs.getString('user_id') != null;
       final session = supabase.auth.currentSession;
       
-      if (mounted) {
+      if (mounted && !_popupShown) { // Only check if popup hasn't been shown
         setState(() {
           _showPopup = (session == null && !hasUserId) && !_temporarilyHidden;
           _isCheckingSession = false;
@@ -124,7 +124,7 @@ String _formatSoldCount(int sold) {
       if (mounted) {
         setState(() {
           _isCheckingSession = false;
-          _showPopup = !_temporarilyHidden;
+          _showPopup = !_temporarilyHidden && !_popupShown;
         });
         
         if (_showPopup) {
@@ -143,6 +143,12 @@ String _formatSoldCount(int sold) {
   }
 
   Future<void> _showRegisterDialog() async {
+    if (_popupShown) return; // Prevent showing popup multiple times
+    
+    setState(() {
+      _popupShown = true;
+    });
+    
     await showDialog(
       context: context,
       barrierDismissible: false, // Prevent closing by tapping outside
@@ -163,7 +169,7 @@ String _formatSoldCount(int sold) {
                   spreadRadius: 2,
                   blurRadius: 4,
                   offset: const Offset(0, 2),
-                ),
+                )
               ],
             ),
             child: Column(
@@ -273,10 +279,10 @@ String _formatSoldCount(int sold) {
           shrinkWrap: true,
           physics: NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount, // 2 cards per row
-            childAspectRatio: 0.75, // Adjust this value to change card proportions
-            mainAxisSpacing: 16, // Space between rows
-            crossAxisSpacing: 16, // Space between columns
+            crossAxisCount: crossAxisCount,
+            childAspectRatio: 0.68, // Adjusted for better height
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
           ),
           itemCount: _products.length,
           itemBuilder: (context, index) {
@@ -285,12 +291,15 @@ String _formatSoldCount(int sold) {
             final soldCount = product['sold'] ?? 0;
             final formattedSold = _formatSoldCount(soldCount is int ? soldCount : int.tryParse(soldCount.toString()) ?? 0);
             
-            return ProductCard(
-              imageUrl: imageUrl,
-              title: product['name'] ?? 'No Name',
-              price: 'Rp.${product['price_display']?.toString() ?? '0'}',
-              sold: '$formattedSold terjual',
-            );
+          return ProductCard(
+            imageUrl: imageUrl,
+            title: product['name'] ?? 'No Name',
+            price: 'Rp ${(product['price_display']?.toStringAsFixed(0)?.replaceAllMapped(
+              RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+              (Match m) => '${m[1]}.',
+            ) ?? '0')}',
+            sold: '$formattedSold terjual',
+          );
           },
         );
       }
@@ -313,22 +322,23 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cardWidth = (MediaQuery.of(context).size.width - 48) / 2; // Calculate width based on screen width minus padding and spacing
-    
     return Card(
       elevation: 4,
       color: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
-      child: SizedBox(
-        width: cardWidth, // Fixed width
+      child: Container(
+        constraints: BoxConstraints(
+          minHeight: 0, // Remove minimum height constraints
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min, // Important for proper sizing
           children: [
             // Square image container
             AspectRatio(
-              aspectRatio: 1, // This makes it square
+              aspectRatio: 1,
               child: ClipRRect(
                 borderRadius: BorderRadius.vertical(
                   top: Radius.circular(12),
@@ -366,52 +376,60 @@ class ProductCard extends StatelessWidget {
                       ),
               ),
             ),
-            Padding(
-              padding: EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
+            // Content with flexible space
+            Flexible(
+              child: Padding(
+                padding: EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    price,
-                    style: TextStyle(
-                      color: Colors.blue,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
+                    SizedBox(height: 4),
+                    Text(
+                      price,
+                      style: TextStyle(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.local_shipping,
-                            color: Colors.grey,
-                            size: 16,
+                    SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.local_shipping,
+                              color: Colors.grey,
+                              size: 16,
+                            ),
+                            SizedBox(width: 4),
+                            Icon(Icons.credit_card, color: Colors.grey, size: 16),
+                          ],
+                        ),
+                        Container(
+                          constraints: BoxConstraints(maxWidth: 70), // Limit width of sold text
+                          child: Text(
+                            sold,
+                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          SizedBox(width: 4),
-                          Icon(Icons.credit_card, color: Colors.grey, size: 16),
-                        ],
-                      ),
-                      Text(
-                        sold,
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
