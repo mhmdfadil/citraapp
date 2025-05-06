@@ -5,18 +5,21 @@ import '/screens/content/filter_category.dart';
 import '/screens/content/filter_search.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '/login.dart';
+import '/screens/content/payment_screen.dart';
 
 class AppBarB extends StatefulWidget implements PreferredSizeWidget {
   @override
   _AppBarBState createState() => _AppBarBState();
 
   @override
-  Size get preferredSize => Size.fromHeight(140); // Tinggi diperbesar untuk menampung kedua field
+  Size get preferredSize => Size.fromHeight(140);
 }
 
 class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _paymentSearchController = TextEditingController();
   bool _isSearching = false;
+  bool _isPaymentSearching = false;
   bool _isMenuOpen = false;
   late AnimationController _animationController;
   late Animation<double> _slideAnimation;
@@ -87,6 +90,18 @@ class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
         context,
         MaterialPageRoute(
           builder: (context) => FilterSearchPage(initialQuery: searchText),
+        ),
+      );
+    }
+  }
+
+  void _handlePaymentSearch() {
+    final searchText = _paymentSearchController.text.trim();
+    if (searchText.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PaymentContent(searchQuery: searchText),
         ),
       );
     }
@@ -242,6 +257,7 @@ class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
   @override
   void dispose() {
     _searchController.dispose();
+    _paymentSearchController.dispose();
     _animationController.dispose();
     _dropdownAnimationController.dispose();
     _removeMenuOverlay();
@@ -415,7 +431,6 @@ class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
                         color: Colors.black87,
                       ),
                     ),
-
                 ],
               ),
             ),
@@ -484,11 +499,13 @@ class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return AppBar(
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: AppBar(
       automaticallyImplyLeading: false,
       backgroundColor: Color(0xFFF273F0),
+      toolbarHeight: 150, // Adjusted height for both rows
       flexibleSpace: SafeArea(
         child: Padding(
           padding: EdgeInsets.only(top: 15, left: 11, right: 11),
@@ -511,27 +528,25 @@ class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
                           SizedBox(width: 8),
                           Expanded(
                             child: TextField(
-                              controller: _searchController,
+                              controller: _paymentSearchController,
                               decoration: InputDecoration(
                                 border: InputBorder.none,
-                                hintText: 'Cari pembayaran',
+                                hintText: 'Cari pembayaran disini...',
                                 hintStyle: TextStyle(color: Colors.grey),
                               ),
-                                onChanged: (value) {
-                            setState(() {
-                              _isSearching = value.isNotEmpty;
-                            });
-                          },
-                          onSubmitted: (value) {
-                            _handleSearch();
-                          },
+                              onChanged: (value) {
+                                setState(() {
+                                  _isPaymentSearching = value.isNotEmpty;
+                                });
+                              },
+                              onSubmitted: (value) {
+                                _handlePaymentSearch();
+                              },
                             ),
                           ),
-                          if (_isSearching)
+                          if (_isPaymentSearching)
                             TextButton(
-                              onPressed: () {
-                                print('Searching for: ${_searchController.text}');
-                              },
+                              onPressed: _handlePaymentSearch,
                               child: Text(
                                 'Cari',
                                 style: TextStyle(color: Colors.black),
@@ -553,10 +568,10 @@ class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
               
               // Baris kedua (pembayaran)
               Row(
-                mainAxisAlignment: MainAxisAlignment.start, // Rata ke kiri
+                mainAxisAlignment: MainAxisAlignment.start,
                 children: [
                   Container(
-                    width: 200, // Lebar container 200
+                    width: 200,
                     padding: EdgeInsets.symmetric(horizontal: 16),
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -584,6 +599,7 @@ class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
