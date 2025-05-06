@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '/screens/widget/appbar_a.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '/register.dart';
+import 'package:citraapp/screens/content/product_detail_page.dart'; // Import the product detail page
 
 class HomeContent extends StatefulWidget {
   @override
@@ -270,17 +271,17 @@ class _HomeContentState extends State<HomeContent> {
     );
   }
 
-  Widget _buildProductGrid() {
+    Widget _buildProductGrid() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Tentukan jumlah kolom berdasarkan lebar layar
         final crossAxisCount = constraints.maxWidth > 600 ? 4 : 2;
+        
         return GridView.builder(
           shrinkWrap: true,
           physics: NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
-            childAspectRatio: 0.68, // Adjusted for better height
+            childAspectRatio: 0.68,
             mainAxisSpacing: 16,
             crossAxisSpacing: 16,
           ),
@@ -291,20 +292,33 @@ class _HomeContentState extends State<HomeContent> {
             final soldCount = product['sold'] ?? 0;
             final formattedSold = _formatSoldCount(soldCount is int ? soldCount : int.tryParse(soldCount.toString()) ?? 0);
             
-          return ProductCard(
-            imageUrl: imageUrl,
-            title: product['name'] ?? 'No Name',
-            price: 'Rp ${(product['price_display']?.toStringAsFixed(0)?.replaceAllMapped(
-              RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-              (Match m) => '${m[1]}.',
-            ) ?? '0')}',
-            sold: '$formattedSold terjual',
-          );
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProductDetailPage(
+                      productId: product['id'].toString(),
+                    ),
+                  ),
+                );
+              },
+              child: ProductCard(
+                imageUrl: imageUrl,
+                title: product['name'] ?? 'No Name',
+                price: 'Rp ${(product['price_display']?.toStringAsFixed(0)?.replaceAllMapped(
+                  RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                  (Match m) => '${m[1]}.',
+                ) ?? '0')}',
+                sold: '$formattedSold terjual',
+              ),
+            );
           },
         );
       }
     );
   }
+
 }
 
 class ProductCard extends StatelessWidget {

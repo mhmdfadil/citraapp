@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '/screens/content/cart_screen.dart';
+import '/screens/content/product_detail_page.dart';
 import '/screens/content/address_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-class CheckoutPage extends StatefulWidget {
-  final List<CartItem> cartItems;
+class COBuyPage extends StatefulWidget {
+  final List<CardProduct> cartItems;
   final double totalPrice;
   final int totalItems;
 
-  const CheckoutPage({
+  const COBuyPage({
     Key? key,
     required this.cartItems,
     required this.totalPrice,
@@ -20,10 +20,10 @@ class CheckoutPage extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<CheckoutPage> createState() => _CheckoutPageState();
+  State<COBuyPage> createState() => _COBuyPageState();
 }
 
-class _CheckoutPageState extends State<CheckoutPage> {
+class _COBuyPageState extends State<COBuyPage> {
   late double shippingCost;
   late double finalTotal;
   AddressData? selectedAddress;
@@ -196,7 +196,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           await supabase.from('order_items').insert({
             'order_id': orderId,
             'product_id': item.product_id,
-            'quantity': item.count,
+            'quantity': item.quantity,
             'price': double.tryParse(item.price) ?? 0,
           });
         }
@@ -427,7 +427,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                             // Show all products in cart
                             ...widget.cartItems.map((item) {
                               final price = double.tryParse(item.price) ?? 0;
-                              final itemTotal = price * item.count;
+                              final itemTotal = price * item.quantity;
                               
                               return Column(
                                 children: [
@@ -443,7 +443,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                                       ),
                                       const Spacer(),
                                       Text(
-                                        '${item.count} item${item.count > 1 ? 's' : ''}',
+                                        '${item.quantity} item${item.quantity > 1 ? 's' : ''}',
                                         style: TextStyle(
                                           color: Colors.grey[600],
                                         ),

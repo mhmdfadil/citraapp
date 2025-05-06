@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '/screens/content/profile_mitra.dart';
+import '/screens/content/filter_category.dart';
+import '/screens/content/filter_search.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '/login.dart';
 
@@ -12,7 +14,7 @@ class AppBarA extends StatefulWidget implements PreferredSizeWidget {
   Size get preferredSize => Size.fromHeight(84);
 }
 
-class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin  {
+class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   bool _isMenuOpen = false;
@@ -67,7 +69,7 @@ class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin  {
       duration: Duration(milliseconds: 200),
     );
 
-   _slideAnimation = Tween<double>(
+    _slideAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
     ).animate(
@@ -76,6 +78,18 @@ class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin  {
 
     _menuOverlay = OverlayEntry(builder: (context) => _buildMenuOverlay());
     _fetchCategories();
+  }
+
+  void _handleSearch() {
+    final searchText = _searchController.text.trim();
+    if (searchText.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => FilterSearchPage(initialQuery: searchText),
+        ),
+      );
+    }
   }
 
   Future<void> _fetchCategories() async {
@@ -272,7 +286,7 @@ class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin  {
     });
   }
 
-   Widget _buildMenuOverlay() {
+  Widget _buildMenuOverlay() {
     final RenderBox? appBarRenderBox = context.findRenderObject() as RenderBox?;
     if (appBarRenderBox == null) return Container();
     
@@ -443,11 +457,16 @@ class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin  {
                 child: InkWell(
                   onTap: () {
                     print('Selected category: ${category['name']}');
-                    setState(() {
-                      _isCategoryDropdownOpen = false;
-                      _dropdownAnimationController.reverse();
+                    _closeMenuAndNavigate(() {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => FilterCategoryPage(
+                            categoryId: category['id'],
+                          ),
+                        ),
+                      );
                     });
-                    _toggleMenu();
                   },
                   child: Container(
                     width: double.infinity,
@@ -499,13 +518,14 @@ class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin  {
                               _isSearching = value.isNotEmpty;
                             });
                           },
+                          onSubmitted: (value) {
+                            _handleSearch();
+                          },
                         ),
                       ),
                       if (_isSearching)
                         TextButton(
-                          onPressed: () {
-                            print('Searching for: ${_searchController.text}');
-                          },
+                          onPressed: _handleSearch,
                           child: Text(
                             'Cari',
                             style: TextStyle(color: Colors.black),
