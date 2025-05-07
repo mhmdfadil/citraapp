@@ -6,6 +6,8 @@ import '/screens/content/filter_search.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '/login.dart';
 import '/screens/content/payment_screen.dart';
+import 'package:citraapp/screens/content/cart_screen.dart';
+
 
 class AppBarB extends StatefulWidget implements PreferredSizeWidget {
   @override
@@ -16,10 +18,13 @@ class AppBarB extends StatefulWidget implements PreferredSizeWidget {
 }
 
 class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
+    final SupabaseClient _supabase = Supabase.instance.client;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _paymentSearchController = TextEditingController();
   bool _isSearching = false;
   bool _isPaymentSearching = false;
+    int _cartItemCount = 0;
+       bool _isCartLoading = false;
   bool _isMenuOpen = false;
   late AnimationController _animationController;
   late Animation<double> _slideAnimation;
@@ -33,6 +38,7 @@ class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+      _fetchCartCount();
 
     _menuItems = [
       {'icon': Icons.menu_outlined, 'isFirstItem': true, 'onTap': true},
@@ -114,6 +120,26 @@ class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
     }
   }
 
+ Future<void> _fetchCartCount() async {
+    try {
+      setState(() => _isCartLoading = true);
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id');
+
+      if (userId != null) {
+        final response = await _supabase
+            .from('carts')
+            .select('id')
+            .eq('user_id', userId);
+
+        setState(() => _cartItemCount = response.length);
+      }
+    } catch (e) {
+      print('Error fetching cart count: $e');
+    } finally {
+      setState(() => _isCartLoading = false);
+    }
+  }
   Future<void> _fetchCategories() async {
     try {
       final response = await Supabase.instance.client
@@ -563,6 +589,52 @@ Widget build(BuildContext context) {
                       ),
                     ),
                   ),
+                   SizedBox(width: 10),
+            Container(
+              margin: const EdgeInsets.only(top: 0, bottom: 0, right: 0),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.shopping_cart, color: Colors.white, size: 30),
+                    padding: const EdgeInsets.all(8),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => CartContent()),
+                      ).then((_) => setState(() {})); // Refresh saat kembali dari cart
+                    },
+                  ),
+                  Positioned(
+                    top: -5,
+                    right: -1,
+                    child: _cartItemCount > 0 
+                      ? Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 21,
+                            minHeight: 21,
+                          ),
+                          child: Text(
+                            _cartItemCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      : SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ),
                   SizedBox(width: 10),
                   IconButton(
                     icon: Icon(Icons.menu, color: Colors.white, size: 30),
