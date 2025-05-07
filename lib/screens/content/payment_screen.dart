@@ -14,78 +14,90 @@ class PaymentContent extends StatefulWidget {
 
 class _PaymentContentState extends State<PaymentContent> {
   final SupabaseClient supabase = Supabase.instance.client;
-  List<Map<String, dynamic>> payments = [];
-  List<Map<String, dynamic>> filteredPayments = [];
-  String selectedStatus = 'paid';
+  List<Map<String, dynamic>> orders = [];
+  List<Map<String, dynamic>> filteredOrders = [];
+  String selectedStatus = 'pending'; // Default sesuai dengan orders table
   bool isLoading = true;
   String? userId;
   int currentPage = 1;
   final int itemsPerPage = 10;
   String? currentSearchQuery;
 
-  final List<String> paymentStatuses = ['paid', 'pending', 'deny', 'expire'];
+  // Status sesuai dengan yang ada di tabel orders dan payments
+  final List<String> orderStatuses = ['pending', 'paid', 'processing', 'shipped', 'delivered', 'cancelled'];
+  final List<String> paymentStatuses = ['pending', 'paid', 'deny', 'expire'];
 
   @override
   void initState() {
     super.initState();
     currentSearchQuery = widget.searchQuery;
-    _loadUserIdAndPayments();
+    _loadUserIdAndOrders();
   }
 
-  Future<void> _loadUserIdAndPayments() async {
+  Future<void> _loadUserIdAndOrders() async {
     final prefs = await SharedPreferences.getInstance();
+    final storedUserId = prefs.getString('user_id');
+    
     setState(() {
-      userId = prefs.getString('user_id');
+      userId = storedUserId;
     });
-    await _fetchPayments();
+    await _fetchOrders();
   }
 
-  Future<void> _fetchPayments() async {
+  Future<void> _fetchOrders() async {
     setState(() => isLoading = true);
     
     try {
       final response = await supabase
-          .from('payments')
+          .from('orders')
           .select('''
-            *, 
-            orders:order_id(*, addresses:address_id(recipient_name))
+            *,
+            payments(*),
+            addresses(*)
           ''')
-          .eq('orders.user_id', userId ?? '')
+          .eq('user_id', userId ?? '')
           .order('created_at', ascending: false);
-      
+
       if (response != null && response is List) {
         setState(() {
-          payments = List<Map<String, dynamic>>.from(response);
+          orders = List<Map<String, dynamic>>.from(response);
           _applyFilters();
           isLoading = false;
         });
       }
     } catch (e) {
-      print('Error fetching payments: $e');
+      print('Error fetching orders: $e');
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal memuat pembayaran')),
+        SnackBar(content: Text('Gagal memuat pesanan')),
       );
     }
   }
 
   void _applyFilters() {
     setState(() {
-      filteredPayments = payments.where((payment) {
-        final statusMatch = payment['status'] == selectedStatus;
-        final order = payment['orders'] as Map<String, dynamic>?;
-        final address = order?['addresses'] as Map<String, dynamic>?;
-        final recipientName = address?['recipient_name']?.toString().toLowerCase() ?? '';
-        final paymentId = payment['id']?.toString().toLowerCase() ?? '';
-        final orderId = payment['order_id']?.toString().toLowerCase() ?? '';
+      filteredOrders = orders.where((order) {
+        // Filter berdasarkan status order atau payment
+        final statusMatch = order['status'] == selectedStatus || 
+                          (order['payments'] != null && 
+                           order['payments'].isNotEmpty && 
+                           order['payments'][0]['status'] == selectedStatus);
         
-        // If there's a search query, filter by it
+        // Informasi alamat
+        final address = order['addresses'] as Map<String, dynamic>?;
+        final recipientName = address?['recipient_name']?.toString().toLowerCase() ?? '';
+        
+        // Informasi order
+        final orderNumber = order['order_number']?.toString().toLowerCase() ?? '';
+        final orderId = order['id']?.toString().toLowerCase() ?? '';
+        
+        // Jika ada query pencarian
         if (currentSearchQuery != null && currentSearchQuery!.isNotEmpty) {
           final query = currentSearchQuery!.toLowerCase();
           return statusMatch && 
-              (recipientName.contains(query) || 
-               paymentId.contains(query) || 
-               orderId.contains(query));
+                (recipientName.contains(query) || 
+                 orderNumber.contains(query) || 
+                 orderId.contains(query));
         }
         return statusMatch;
       }).toList();
@@ -93,12 +105,12 @@ class _PaymentContentState extends State<PaymentContent> {
     });
   }
 
-  List<Map<String, dynamic>> get paginatedPayments {
+  List<Map<String, dynamic>> get paginatedOrders {
     final startIndex = (currentPage - 1) * itemsPerPage;
     final endIndex = startIndex + itemsPerPage;
-    return endIndex > filteredPayments.length
-        ? filteredPayments.sublist(startIndex)
-        : filteredPayments.sublist(startIndex, endIndex);
+    return endIndex > filteredOrders.length
+        ? filteredOrders.sublist(startIndex)
+        : filteredOrders.sublist(startIndex, endIndex);
   }
 
   String _formatCurrency(dynamic amount) {
@@ -120,23 +132,44 @@ class _PaymentContentState extends State<PaymentContent> {
   }
 
   Color _getStatusColor(String? status) {
-    switch (status) {
+    switch (status?.toLowerCase()) {
       case 'paid':
+      case 'delivered':
         return Colors.green;
       case 'pending':
         return Colors.orange;
       case 'deny':
+      case 'cancelled':
         return Colors.red;
       case 'expire':
         return Colors.grey;
+      case 'processing':
+      case 'shipped':
+        return Colors.blue;
       default:
         return Colors.deepPurple;
     }
   }
 
+  String _getPaymentMethod(Map<String, dynamic> order) {
+    if (order['payments'] != null && order['payments'].isNotEmpty) {
+      return order['payments'][0]['method'] ?? order['payment_method'] ?? 'Unknown';
+    }
+    return order['payment_method'] ?? 'Unknown';
+  }
+
+  double _getTotalAmount(Map<String, dynamic> order) {
+    final total = order['total_amount'] ?? 0;
+    final shipping = order['shipping_cost'] ?? 0;
+    final serviceFee = order['service_fee'] ?? 0;
+    final discount = order['discount'] ?? 0;
+    
+    return (total + shipping + serviceFee - discount).toDouble();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final totalPages = (filteredPayments.length / itemsPerPage).ceil();
+    final totalPages = (filteredOrders.length / itemsPerPage).ceil();
     final hasPreviousPage = currentPage > 1;
     final hasNextPage = currentPage < totalPages;
 
@@ -149,7 +182,7 @@ class _PaymentContentState extends State<PaymentContent> {
             Padding(
               padding: const EdgeInsets.all(8.0),
               child: Text(
-                'Hasil pencarian pembayaran "${currentSearchQuery}"',
+                'Hasil pencarian untuk "${currentSearchQuery}"',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -189,20 +222,20 @@ class _PaymentContentState extends State<PaymentContent> {
             ),
           ),
           
-          // Payment Cards
+          // Order Cards
           Expanded(
             child: isLoading
                 ? Center(child: CircularProgressIndicator())
                 : SingleChildScrollView(
                     child: Column(
                       children: [
-                        if (filteredPayments.isEmpty)
+                        if (filteredOrders.isEmpty)
                           Padding(
                             padding: const EdgeInsets.all(16.0),
                             child: Text(
                               currentSearchQuery != null && currentSearchQuery!.isNotEmpty
-                                  ? 'Tidak ada pembayaran dengan status $selectedStatus yang cocok dengan pencarian'
-                                  : 'Tidak ada pembayaran dengan status $selectedStatus',
+                                  ? 'Tidak ada pesanan yang cocok dengan pencarian'
+                                  : 'Tidak ada pesanan dengan status $selectedStatus',
                               style: TextStyle(fontSize: 16),
                             ),
                           )
@@ -211,11 +244,14 @@ class _PaymentContentState extends State<PaymentContent> {
                             physics: NeverScrollableScrollPhysics(),
                             shrinkWrap: true,
                             padding: EdgeInsets.all(8),
-                            itemCount: paginatedPayments.length,
+                            itemCount: paginatedOrders.length,
                             itemBuilder: (context, index) {
-                              final payment = paginatedPayments[index];
-                              final order = payment['orders'] as Map<String, dynamic>?;
-                              final address = order?['addresses'] as Map<String, dynamic>?;
+                              final order = paginatedOrders[index];
+                              final payment = order['payments'] != null && order['payments'].isNotEmpty 
+                                  ? order['payments'][0] 
+                                  : null;
+                              final address = order['addresses'] as Map<String, dynamic>?;
+                              final status = payment?['status'] ?? order['status'];
                               
                               return Card(
                                 elevation: 2,
@@ -232,7 +268,7 @@ class _PaymentContentState extends State<PaymentContent> {
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text(
-                                            'ID Pembayaran: #${payment['id']}',
+                                            'Pesanan: #${order['order_number']}',
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 14,
@@ -241,11 +277,11 @@ class _PaymentContentState extends State<PaymentContent> {
                                           Container(
                                             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                             decoration: BoxDecoration(
-                                              color: _getStatusColor(payment['status']),
+                                              color: _getStatusColor(status),
                                               borderRadius: BorderRadius.circular(12),
                                             ),
                                             child: Text(
-                                              payment['status']?.toUpperCase() ?? '',
+                                              status?.toUpperCase() ?? '',
                                               style: TextStyle(
                                                 color: Colors.white,
                                                 fontSize: 12,
@@ -258,7 +294,7 @@ class _PaymentContentState extends State<PaymentContent> {
                                       Divider(height: 1),
                                       SizedBox(height: 8),
                                       Text(
-                                        'Pesanan: #${payment['order_id']}',
+                                        'Metode Pembayaran: ${_getPaymentMethod(order)}',
                                         style: TextStyle(fontSize: 13),
                                       ),
                                       SizedBox(height: 4),
@@ -268,8 +304,10 @@ class _PaymentContentState extends State<PaymentContent> {
                                       ),
                                       SizedBox(height: 4),
                                       Text(
-                                        'Metode: ${payment['method'] ?? 'Tidak diketahui'}',
+                                        'Alamat: ${address?['street_address'] ?? ''}, ${address?['village'] ?? ''}, ${address?['district'] ?? ''}',
                                         style: TextStyle(fontSize: 13),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                       SizedBox(height: 8),
                                       Row(
@@ -280,7 +318,7 @@ class _PaymentContentState extends State<PaymentContent> {
                                             style: TextStyle(fontSize: 13),
                                           ),
                                           Text(
-                                            _formatCurrency(payment['amount']),
+                                            _formatCurrency(_getTotalAmount(order)),
                                             style: TextStyle(
                                               fontSize: 14,
                                               fontWeight: FontWeight.bold,
@@ -294,20 +332,23 @@ class _PaymentContentState extends State<PaymentContent> {
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text(
-                                            'Tanggal: ${_formatDate(payment['created_at'])}',
+                                            'Tanggal: ${_formatDate(order['created_at'])}',
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: Colors.grey[600],
                                             ),
                                           ),
-                                          if (payment['status'] == 'pending')
+                                          if (payment != null)
                                             TextButton(
                                               onPressed: () {
-                                                // Add payment confirmation logic here
+                                                // TODO: Implement detail view
                                               },
                                               child: Text(
-                                                'Konfirmasi',
-                                                style: TextStyle(color: Colors.deepPurple),
+                                                'Detail Pembayaran',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.deepPurple,
+                                                ),
                                               ),
                                             ),
                                         ],
@@ -320,7 +361,7 @@ class _PaymentContentState extends State<PaymentContent> {
                           ),
                         
                         // Pagination Controls
-                        if (filteredPayments.isNotEmpty)
+                        if (filteredOrders.isNotEmpty)
                           Container(
                             padding: EdgeInsets.symmetric(vertical: 16),
                             child: Row(

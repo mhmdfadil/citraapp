@@ -37,7 +37,8 @@ class _UserScreenState extends State<UserScreen> {
         children: _pages,
       ),
       // Hanya tampilkan BottomAppBarA jika bukan PaymentContent (index 2)
-     bottomNavigationBar: (_selectedIndex != 1 && _selectedIndex != 3)
+    //  bottomNavigationBar: (_selectedIndex != 1 && _selectedIndex != 3)
+    bottomNavigationBar: (_selectedIndex != 1)
           ? BottomAppBarA(
               selectedIndex: _selectedIndex,
               onItemSelected: _onItemTapped,

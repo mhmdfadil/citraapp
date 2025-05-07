@@ -4,6 +4,7 @@ import '/screens/content/profile_mitra.dart';
 import '/screens/content/filter_category.dart';
 import '/screens/content/filter_search.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:citraapp/screens/content/payment_screen.dart';
 import '/login.dart';
 
 class AppBarA extends StatefulWidget implements PreferredSizeWidget {
@@ -38,8 +39,15 @@ class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin {
         'text': 'Kategori Produk',
         'action': _toggleCategoryDropdown
       },
-      {'icon': Icons.credit_card_outlined, 'text': 'Status Pesanan'},
-      {'icon': Icons.settings_outlined, 'text': 'Pengaturan'},
+      {'icon': Icons.credit_card_outlined, 'text': 'Status Pesanan',
+       'action': (BuildContext context) {
+          _closeMenuAndNavigate(() {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => PaymentContent()),
+            );
+          });
+        }},
       {
         'icon': Icons.info_outline_rounded,
         'text': 'Info Toko',
