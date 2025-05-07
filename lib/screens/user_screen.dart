@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '/screens/widget/botappbar_a.dart';
 import '/screens/content/home_screen.dart';
-import '/screens/content/cart_screen.dart';
+import '/screens/content/category_screen.dart';
 import '/screens/content/payment_screen.dart';
 import '/screens/content/profile_screen.dart';
 
@@ -16,7 +16,7 @@ class _UserScreenState extends State<UserScreen> {
 
   final List<Widget> _pages = [
     HomeContent(),    // Index 0 (Home)
-    CartContent(),    // Index 1 (Cart)
+    CategoryContent(),    // Index 1 (Category)
     PaymentContent(), // Index 2 (Payment)
     ProfileContent(), // Index 3 (Profile)
   ];
@@ -38,7 +38,7 @@ class _UserScreenState extends State<UserScreen> {
       ),
       // Hanya tampilkan BottomAppBarA jika bukan PaymentContent (index 2)
     //  bottomNavigationBar: (_selectedIndex != 1 && _selectedIndex != 3)
-    bottomNavigationBar: (_selectedIndex != 1)
+    bottomNavigationBar: (_selectedIndex != null)
           ? BottomAppBarA(
               selectedIndex: _selectedIndex,
               onItemSelected: _onItemTapped,

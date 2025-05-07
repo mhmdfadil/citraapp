@@ -199,6 +199,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
             'quantity': item.count,
             'price': double.tryParse(item.price) ?? 0,
           });
+
+          // Update product stock and sold count
+          await _updateProductInventory(item);
+          
+          // Remove item from cart
+          await _removeFromCart(item, userId);
         }
 
         // Create payment record
@@ -230,6 +236,48 @@ class _CheckoutPageState extends State<CheckoutPage> {
       );
     } finally {
       setState(() => isProcessingOrder = false);
+    }
+  }
+
+  Future<void> _updateProductInventory(CartItem item) async {
+    try {
+      // First get current stock and sold values
+      final productResponse = await supabase
+          .from('products')
+          .select('stock, sold')
+          .eq('id', item.product_id)
+          .single();
+
+      if (productResponse != null) {
+        final currentStock = productResponse['stock'] as int;
+        final currentSold = productResponse['sold'] as int;
+
+        // Update product stock (stock - item.count)
+        await supabase
+            .from('products')
+            .update({
+              'stock': currentStock - item.count,
+              'sold': currentSold + item.count,
+            })
+            .eq('id', item.product_id);
+      }
+    } catch (e) {
+      debugPrint('Error updating product inventory: $e');
+      // You might want to handle this error more gracefully
+      rethrow;
+    }
+  }
+
+  Future<void> _removeFromCart(CartItem item, String userId) async {
+    try {
+      await supabase
+          .from('carts')
+          .delete()
+          .eq('id', item.id)
+          .eq('user_id', userId);
+    } catch (e) {
+      debugPrint('Error removing item from cart: $e');
+      // Even if cart removal fails, we should continue with the order
     }
   }
 

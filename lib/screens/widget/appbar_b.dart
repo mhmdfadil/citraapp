@@ -42,11 +42,6 @@ class _AppBarBState extends State<AppBarB> with TickerProviderStateMixin {
 
     _menuItems = [
       {'icon': Icons.menu_outlined, 'isFirstItem': true, 'onTap': true},
-      {
-        'icon': Icons.dashboard_outlined,
-        'text': 'Kategori Produk',
-        'action': _toggleCategoryDropdown
-      },
       {'icon': Icons.credit_card_outlined, 'text': 'Status Pesanan', 
       'action': (BuildContext context) {
           _closeMenuAndNavigate(() {
@@ -606,8 +601,8 @@ Widget build(BuildContext context) {
                     },
                   ),
                   Positioned(
-                    top: -5,
-                    right: -1,
+                    top: -3,
+                    right: 0,
                     child: _cartItemCount > 0 
                       ? Container(
                           padding: const EdgeInsets.all(4),

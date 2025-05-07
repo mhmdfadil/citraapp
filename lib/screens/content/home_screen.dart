@@ -30,6 +30,30 @@ class _HomeContentState extends State<HomeContent> {
     _fetchProducts();
   }
 
+ Future<void> _refreshProducts() async {
+    setState(() {
+      _isLoadingProducts = true;
+    });
+    await _fetchProducts();
+  }
+
+  
+  // Modify the product detail navigation to handle refresh
+  void _navigateToProductDetail(BuildContext context, String productId) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProductDetailPage(
+          productId: productId,
+        ),
+      ),
+    );
+    
+    // If we got a result (order was placed), refresh products
+    if (result == true) {
+      await _refreshProducts();
+    }
+  }
   // Function to format sold count with detailed ranges
   String _formatSoldCount(int sold) {
     if (sold < 10) {
@@ -271,7 +295,8 @@ class _HomeContentState extends State<HomeContent> {
     );
   }
 
-    Widget _buildProductGrid() {
+    // Update the product grid item builder
+  Widget _buildProductGrid() {
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = constraints.maxWidth > 600 ? 4 : 2;
@@ -294,14 +319,7 @@ class _HomeContentState extends State<HomeContent> {
             
             return GestureDetector(
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ProductDetailPage(
-                      productId: product['id'].toString(),
-                    ),
-                  ),
-                );
+                _navigateToProductDetail(context, product['id'].toString());
               },
               child: ProductCard(
                 imageUrl: imageUrl,
@@ -318,7 +336,6 @@ class _HomeContentState extends State<HomeContent> {
       }
     );
   }
-
 }
 
 class ProductCard extends StatelessWidget {

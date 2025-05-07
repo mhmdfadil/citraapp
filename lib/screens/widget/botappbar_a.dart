@@ -67,7 +67,7 @@ class BottomAppBarA extends StatelessWidget {
   IconData _getIconForIndex(int index) {
     switch (index) {
       case 0: return Icons.home;
-      case 1: return Icons.shopping_cart;
+      case 1: return Icons.dashboard;
       case 2: return Icons.credit_card;
       case 3: return Icons.person;
       default: return Icons.error;

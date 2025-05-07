@@ -355,9 +355,9 @@ class _FavoritPageState extends State<FavoritPage> {
                           children: [
                             _buildSortChip('Terbaru'),
                             const SizedBox(width: 8),
-                            _buildSortChip('Harga Tertinggi'),
+                            _buildSortChip('Tertinggi'),
                             const SizedBox(width: 8),
-                            _buildSortChip('Harga Terendah'),
+                            _buildSortChip('Terendah'),
                           ],
                         ),
                       ),

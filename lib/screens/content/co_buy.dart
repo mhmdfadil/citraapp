@@ -152,7 +152,39 @@ class _COBuyPageState extends State<COBuyPage> {
     }
   }
 
-  Future<void> _createOrder() async {
+  Future<void> _updateProductStockAndSold() async {
+    try {
+      // Update stock and sold quantity for each product in the order
+      for (final item in widget.cartItems) {
+        // First get current stock and sold values
+        final productResponse = await supabase
+            .from('products')
+            .select('stock, sold')
+            .eq('id', item.product_id)
+            .single();
+
+        if (productResponse != null) {
+          final currentStock = productResponse['stock'] as int;
+          final currentSold = productResponse['sold'] as int;
+
+          // Update stock (decrease by quantity) and sold (increase by quantity)
+          await supabase
+              .from('products')
+              .update({
+                'stock': currentStock - item.quantity,
+                'sold': currentSold + item.quantity,
+              })
+              .eq('id', item.product_id);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error updating product stock and sold: $e');
+      throw Exception('Failed to update product inventory');
+    }
+  }
+
+  // In COBuyPage.dart
+Future<void> _createOrder() async {
     if (isProcessingOrder) return;
     
     try {
@@ -201,6 +233,9 @@ class _COBuyPageState extends State<COBuyPage> {
           });
         }
 
+        // Update product stock and sold quantities
+        await _updateProductStockAndSold();
+
         // Create payment record
         await supabase.from('payments').insert({
           'order_id': orderId,
@@ -222,6 +257,9 @@ class _COBuyPageState extends State<COBuyPage> {
           // For online payments, redirect to payment gateway
           _showPaymentInstructions(context, orderNumber);
         }
+
+        // Return success result
+        Navigator.pop(context, true);
       }
     } catch (e) {
       debugPrint('Error creating order: $e');
@@ -269,35 +307,38 @@ class _COBuyPageState extends State<COBuyPage> {
     );
   }
 
-  void _showOrderSuccess(BuildContext context, String orderNumber) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Order Created'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green, size: 60),
-            const SizedBox(height: 16),
-            Text('Your order #$orderNumber has been created successfully'),
-            const SizedBox(height: 16),
-            if (selectedPaymentMethod == 'COD')
-              const Text('Your order will be processed soon'),
-            if (selectedPaymentMethod == 'BSI' || selectedPaymentMethod == 'DANA')
-              const Text('Please complete your payment to process the order'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).popUntil((route) => route.isFirst);
-            },
-            child: const Text('OK'),
-          ),
+// In COBuyPage.dart
+void _showOrderSuccess(BuildContext context, String orderNumber) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Order Created'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 60),
+          const SizedBox(height: 16),
+          Text('Your order #$orderNumber has been created successfully'),
+          const SizedBox(height: 16),
+          if (selectedPaymentMethod == 'COD')
+            const Text('Your order will be processed soon'),
+          if (selectedPaymentMethod == 'BSI' || selectedPaymentMethod == 'DANA')
+            const Text('Please complete your payment to process the order'),
         ],
       ),
-    );
-  }
+      actions: [
+        TextButton(
+          onPressed: () {
+            // Notify the parent that products should be refreshed
+            Navigator.of(context).popUntil((route) => route.isFirst);
+            Navigator.of(context).pop(true); // Pass true to indicate success
+          },
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
