@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:citraapp/screens/content/ubah_profile_page.dart';
 import 'package:citraapp/screens/content/favorit_page.dart';
 import 'package:citraapp/login.dart';
+import 'package:citraapp/screens/content/ubah_profile_page.dart';
 
 class ProfileContent extends StatefulWidget {
   const ProfileContent({super.key});
@@ -11,6 +12,8 @@ class ProfileContent extends StatefulWidget {
   @override
   State<ProfileContent> createState() => _ProfileContentState();
 }
+
+
 
 class _ProfileContentState extends State<ProfileContent> {
   final supabase = Supabase.instance.client;
@@ -150,17 +153,23 @@ Future<void> _fetchUserData() async {
                         context,
                         title: 'Akun Saya',
                         items: [
-                          _buildProfileItem(
-                            icon: Icons.edit,
-                            title: 'Ubah Profil',
-                            color: primaryColor,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const UbahProfilePage(),
-                              ),
-                            ),
-                          ),
+                         _buildProfileItem(
+  icon: Icons.edit,
+  title: 'Ubah Profil',
+  color: primaryColor,
+  onTap: () => Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => const UbahProfilePage(),
+    ),
+  ).then((updatedData) {
+    if (updatedData != null) {
+      setState(() {
+        userData = updatedData;
+      });
+    }
+  }),
+),
                           _buildProfileItem(
                             icon: Icons.favorite,
                             title: 'Favorit',
@@ -464,3 +473,4 @@ extension on PostgrestMap {
   
   get data => null;
 }
+

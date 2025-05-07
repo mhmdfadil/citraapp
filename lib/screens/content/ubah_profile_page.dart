@@ -47,9 +47,7 @@ class _UbahProfilePageState extends State<UbahProfilePage> {
       await _loadUserData();
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
-      );
+      _showErrorSnackbar('Error: ${e.toString()}');
     }
   }
 
@@ -58,21 +56,17 @@ class _UbahProfilePageState extends State<UbahProfilePage> {
       final response = await Supabase.instance.client
           .from('users')
           .select()
-          .eq('id', userId as Object)
+          .eq('id', userId!)
           .single();
 
-      if (response != null) {
-        setState(() {
-          _usernameController.text = response['username'] ?? '';
-          _phoneController.text = response['no_hp'] ?? '';
-          _isLoading = false;
-        });
-      }
+      setState(() {
+        _usernameController.text = response['username'] ?? '';
+        _phoneController.text = response['no_hp'] ?? '';
+        _isLoading = false;
+      });
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading user data: $e')),
-      );
+      _showErrorSnackbar('Error loading user data: $e');
     }
   }
 
@@ -81,69 +75,81 @@ class _UbahProfilePageState extends State<UbahProfilePage> {
   }
 
   Future<void> _updateProfile() async {
-    if (!_profileFormKey.currentState!.validate()) return;
+  if (!_profileFormKey.currentState!.validate()) return;
 
-    setState(() => _isUpdatingProfile = true);
-    try {
-      if (userId != null) {
-        final updates = {
-          'username': _usernameController.text,
-          'no_hp': _phoneController.text,
-          'updated_at': DateTime.now().toIso8601String(),
-        };
+  setState(() => _isUpdatingProfile = true);
+  try {
+    final updates = {
+      'username': _usernameController.text,
+      'no_hp': _phoneController.text,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
 
-        final response = await Supabase.instance.client
-            .from('users')
-            .update(updates)
-            .eq('id', userId!);
+    final response = await Supabase.instance.client
+        .from('users')
+        .update(updates)
+        .eq('id', userId!)
+        .select()
+        .single();
 
-        if (response.error == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Profil berhasil diperbarui')),
-          );
-        }
-      }
-  
-    } finally {
-      setState(() => _isUpdatingProfile = false);
-    }
+    // Kembalikan data yang sudah diupdate
+    Navigator.pop(context, response);
+    _showSuccessSnackbar('Profil berhasil diperbarui');
+  } catch (e) {
+    _showErrorSnackbar('Error: ${e.toString()}');
+  } finally {
+    setState(() => _isUpdatingProfile = false);
   }
+}
 
   Future<void> _updatePassword() async {
     if (!_passwordFormKey.currentState!.validate()) return;
 
     if (_newPasswordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password baru dan konfirmasi tidak cocok')),
-      );
+      _showErrorSnackbar('Password baru dan konfirmasi tidak cocok');
       return;
     }
 
     setState(() => _isUpdatingPassword = true);
     try {
-      if (userId != null) {
-        final hashedPassword = _hashPassword(_newPasswordController.text);
-        
-        final response = await Supabase.instance.client
-            .from('users')
-            .update({
-              'password': hashedPassword,
-              'updated_at': DateTime.now().toIso8601String(),
-            })
-            .eq('id', userId!)
-            .execute();
+      final hashedPassword = _hashPassword(_newPasswordController.text);
+      
+      final response = await Supabase.instance.client
+          .from('users')
+          .update({
+            'password': hashedPassword,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', userId!)
+          .select()
+          .single();
 
-        if (response.error == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Password berhasil diperbarui')),
-          );
-          _newPasswordController.clear();
-          _confirmPasswordController.clear();
-        }
-      }
+      _showSuccessSnackbar('Password berhasil diperbarui');
+      _newPasswordController.clear();
+      _confirmPasswordController.clear();
+    } catch (e) {
+      _showErrorSnackbar('Error: ${e.toString()}');
     } finally {
       setState(() => _isUpdatingPassword = false);
     }
+  }
+
+  void _showSuccessSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   @override
@@ -475,11 +481,4 @@ class _UbahProfilePageState extends State<UbahProfilePage> {
       ),
     );
   }
-}
-
-extension on PostgrestFilterBuilder {
-  execute() {}
-}
-
-class _execute {
 }

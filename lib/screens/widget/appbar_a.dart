@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '/screens/content/profile_mitra.dart';
 import '/screens/content/filter_category.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '/screens/content/filter_search.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:citraapp/screens/content/payment_screen.dart';
+import 'package:citraapp/screens/content/cart_screen.dart';
 import '/login.dart';
 
 class AppBarA extends StatefulWidget implements PreferredSizeWidget {
@@ -16,8 +18,11 @@ class AppBarA extends StatefulWidget implements PreferredSizeWidget {
 }
 
 class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin {
+  final SupabaseClient _supabase = Supabase.instance.client;
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
+  int _cartItemCount = 0;
+   bool _isCartLoading = false;
   bool _isMenuOpen = false;
   late AnimationController _animationController;
   late Animation<double> _slideAnimation;
@@ -31,6 +36,7 @@ class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+      _fetchCartCount();
 
     _menuItems = [
       {'icon': Icons.menu_outlined, 'isFirstItem': true, 'onTap': true},
@@ -126,6 +132,26 @@ class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin {
         _dropdownAnimationController.reverse();
       }
     });
+  }
+ Future<void> _fetchCartCount() async {
+    try {
+      setState(() => _isCartLoading = true);
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id');
+
+      if (userId != null) {
+        final response = await _supabase
+            .from('carts')
+            .select('id')
+            .eq('user_id', userId);
+
+        setState(() => _cartItemCount = response.length);
+      }
+    } catch (e) {
+      print('Error fetching cart count: $e');
+    } finally {
+      setState(() => _isCartLoading = false);
+    }
   }
 
   Future<void> _handleLogout(BuildContext context) async {
@@ -493,65 +519,111 @@ class _AppBarAState extends State<AppBarA> with TickerProviderStateMixin {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return AppBar(
-      automaticallyImplyLeading: false,
-      backgroundColor: Color(0xFFF273F0),
-      flexibleSpace: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.only(top: 25, left: 11, right: 11),
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.search, color: Colors.grey, size: 28),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          decoration: InputDecoration(
-                            border: InputBorder.none,
-                            hintText: 'Cari produk di sini',
-                            hintStyle: TextStyle(color: Colors.grey),
-                          ),
-                          onChanged: (value) {
-                            setState(() {
-                              _isSearching = value.isNotEmpty;
-                            });
-                          },
-                          onSubmitted: (value) {
-                            _handleSearch();
-                          },
+Widget build(BuildContext context) {
+  return AppBar(
+    automaticallyImplyLeading: false,
+    backgroundColor: Color(0xFFF273F0),
+    flexibleSpace: SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(top: 25, left: 11, right: 11),
+        child: Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.search, color: Colors.grey, size: 28),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          hintText: 'Cari produk di sini',
+                          hintStyle: TextStyle(color: Colors.grey),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _isSearching = value.isNotEmpty;
+                          });
+                        },
+                        onSubmitted: (value) {
+                          _handleSearch();
+                        },
+                      ),
+                    ),
+                    if (_isSearching)
+                      TextButton(
+                        onPressed: _handleSearch,
+                        child: Text(
+                          'Cari',
+                          style: TextStyle(color: Colors.black),
                         ),
                       ),
-                      if (_isSearching)
-                        TextButton(
-                          onPressed: _handleSearch,
-                          child: Text(
-                            'Cari',
-                            style: TextStyle(color: Colors.black),
-                          ),
-                        ),
-                    ],
-                  ),
+                  ],
                 ),
               ),
-              SizedBox(width: 10),
-              IconButton(
-                icon: Icon(Icons.menu, color: Colors.white, size: 30),
-                onPressed: _toggleMenu,
+            ),
+            SizedBox(width: 10),
+            Container(
+              margin: const EdgeInsets.only(top: 0, bottom: 0, right: 0),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.shopping_cart, color: Colors.white, size: 30),
+                    padding: const EdgeInsets.all(8),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => CartContent()),
+                      ).then((_) => setState(() {})); // Refresh saat kembali dari cart
+                    },
+                  ),
+                  Positioned(
+                    top: -5,
+                    right: -1,
+                    child: _cartItemCount > 0 
+                      ? Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 21,
+                            minHeight: 21,
+                          ),
+                          child: Text(
+                            _cartItemCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      : SizedBox.shrink(),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            SizedBox(width: 10),
+            IconButton(
+              icon: Icon(Icons.menu, color: Colors.white, size: 30),
+              onPressed: _toggleMenu,
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
