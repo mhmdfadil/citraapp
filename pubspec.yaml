@@ -46,8 +46,9 @@ dependencies:
   basic_utils: ^5.8.2
   share_plus: ^11.0.0
   flutter_map: ^5.0.0
-  latlong2: ^0.9.0  # Untuk koordina
-
+  latlong2: ^0.9.0  
+  flutter_emoji_picker: ^1.0.1
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -71,6 +72,7 @@ flutter:
     - assets/images/banner.png
     - assets/images/war1.png
     - assets/images/war2.png
+    - assets/images/placeholder.png
     - assets/images/war3.png
     - assets/images/war4.png
     - assets/images/mitra_citra.png

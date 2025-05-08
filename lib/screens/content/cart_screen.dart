@@ -585,7 +585,7 @@ class _CartContentState extends State<CartContent> {
                     children: [
                       // Product name with fixed height
                       SizedBox(
-                        height: 30, // Fixed height for name
+                        height: 40, // Fixed height for name
                         child: Text(
                           item.name,
                           style: const TextStyle(
