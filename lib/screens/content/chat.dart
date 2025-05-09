@@ -1,4 +1,3 @@
-import 'package:citraapp/screens/content/cart_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,6 +5,8 @@ import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '/login.dart';
+import '/screens/content/cart_screen.dart';
+import '/screens/content/emoji_data.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -17,18 +18,23 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
   final SupabaseClient _supabase = Supabase.instance.client;
   
   String? _currentUserId;
   String? _selectedAdminId;
   List<Map<String, dynamic>> _adminList = [];
+  List<Map<String, dynamic>> _filteredAdminList = [];
   List<Map<String, dynamic>> _messages = [];
   bool _isLoading = true;
   bool _isFirstLoad = true;
   RealtimeChannel? _messagesChannel;
+  RealtimeChannel? _adminStatusChannel;
   bool _showChatContent = false;
   bool _showEmojiPicker = false;
   String? _selectedEmojiCategory;
+  bool _isScrolling = false;
+  Map<String, int> _unreadCounts = {};
 
   // Luxury pink color palette
   final Color _primaryColor = const Color(0xFFE91E63);
@@ -38,217 +44,15 @@ class _ChatPageState extends State<ChatPage> {
   final Color _darkPink = const Color(0xFFC2185B);
   final Color _textColor = Colors.white;
   final Color _chatBubbleUser = const Color(0xFFF06292);
-  final Color _chatBubbleAdmin = const Color(0xFFF8BBD0);
-  
-   final Map<String, List<String>> _emojiCategories = {
-  'All': [], // Will be populated with all emojis
-  'Wajah': [
-    '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇',
-    '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚',
-    '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸',
-    '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️',
-    '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡',
-    '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓',
-    '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄',
-    '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵',
-    '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠',
-    '😈', '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽',
-    '👾', '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀',
-    '😿', '😾'
-  ],
-  'Hewan': [
-    '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯',
-    '🦁', '🐮', '🐷', '🐽', '🐸', '🐵', '🙈', '🙉', '🙊', '🐒',
-    '🐔', '🐧', '🐦', '🐤', '🐣', '🐥', '🦆', '🦅', '🦉', '🦇',
-    '🐺', '🐗', '🐴', '🦄', '🐝', '🪱', '🐛', '🦋', '🐌', '🐞',
-    '🐜', '🪰', '🪲', '🪳', '🦟', '🦗', '🕷', '🦂', '🐢', '🐍',
-    '🦎', '🦖', '🦕', '🐙', '🦑', '🦐', '🦞', '🦀', '🐡', '🐠',
-    '🐟', '🐬', '🐳', '🐋', '🦈', '🐊', '🐅', '🐆', '🦓', '🦍',
-    '🦧', '🦣', '🐘', '🦛', '🦏', '🐪', '🐫', '🦒', '🦘', '🦬',
-    '🐃', '🐂', '🐄', '🐎', '🐖', '🐏', '🐑', '🦙', '🐐', '🦌',
-    '🐕', '🦮', '🐩', '🐈', '🐈⬛', '🪶', '🐓', '🦃', '🦤', '🦚',
-    '🦜', '🦢', '🦩', '🕊', '🐇', '🦝', '🦨', '🦡', '🦫', '🦦',
-    '🦥', '🐁', '🐀', '🐿', '🦔'
-  ],
-  'Transportasi': [
-    '🚗', '🚕', '🚙', '🚌', '🚎', '🏎', '🚓', '🚑', '🚒', '🚐',
-    '🛻', '🚚', '🚛', '🚜', '🦯', '🦽', '🦼', '🛴', '🚲', '🛵',
-    '🏍', '🛺', '🚨', '🚔', '🚍', '🚘', '🚖', '🚡', '🚠', '🚟',
-    '🚃', '🚋', '🚞', '🚝', '🚄', '🚅', '🚈', '🚂', '🚆', '🚇',
-    '🚊', '🚉', '✈️', '🛫', '🛬', '🛩', '💺', '🛰', '🚀', '🛸',
-    '🚁', '🛶', '⛵', '🚤', '🛥', '🛳', '⛴', '🚢', '⚓', '🪝',
-    '🚧', '⛽', '🚏', '🚦', '🚥', '🗺', '🗿', '🗽', '🗼', '🏰',
-    '🏯', '🏟', '🎡', '🎢', '🎠', '⛲', '⛱', '🏖', '🏝', '🏜',
-    '🌋', '⛰', '🏔', '🗻', '🏕', '⛺', '🛖', '🏠', '🏡', '🏘',
-    '🏚', '🏗', '🏭', '🏢', '🏬', '🏣', '🏤', '🏥', '🏦', '🏨',
-    '🏪', '🏫', '🏩', '💒', '🏛', '⛪', '🕌', '🛕', '🕍', '⛩',
-    '🕋', '⛲', '🎪', '🎭', '🖼', '🎨', '🧵', '🪡', '🧶', '🪢',
-    '👓', '🕶', '🥽', '🥼', '🦺', '👔', '👕', '👖', '🧣', '🧤',
-    '🧥', '🧦', '👗', '👘', '🥻', '🩱', '🩲', '🩳', '👙', '👚',
-    '👛', '👜', '👝', '🎒', '🩴', '👞', '👟', '🥾', '🥿', '👠',
-    '👡', '🩰', '👢', '👑', '👒', '🎩', '🎓', '🧢', '🪖', '⛑',
-    '💄', '💍', '💼'
-  ],
-  'Makanan': [
-    '🍏', '🍎', '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🍈',
-    '🍒', '🍑', '🥭', '🍍', '🥥', '🥝', '🍅', '🍆', '🥑', '🥦',
-    '🥬', '🥒', '🌶', '🫑', '🌽', '🥕', '🫒', '🧄', '🧅', '🥔',
-    '🍠', '🥐', '🥯', '🍞', '🥖', '🥨', '🧀', '🥚', '🍳', '🧈',
-    '🥞', '🧇', '🥓', '🥩', '🍗', '🍖', '🦴', '🌭', '🍔', '🍟',
-    '🍕', '🫓', '🥪', '🥙', '🧆', '🌮', '🌯', '🫔', '🥗', '🥘',
-    '🫕', '🥫', '🍝', '🍜', '🍲', '🍛', '🍣', '🍱', '🥟', '🦪',
-    '🍤', '🍙', '🍚', '🍘', '🍥', '🥠', '🥮', '🍢', '🍡', '🍧',
-    '🍨', '🍦', '🥧', '🧁', '🍰', '🎂', '🍮', '🍭', '🍬', '🍫',
-    '🍿', '🍩', '🍪', '🌰', '🥜', '🍯', '🥛', '🍼', '🫖', '☕',
-    '🍵', '🧃', '🥤', '🍶', '🍺', '🍻', '🥂', '🍷', '🥃', '🍸',
-    '🍹', '🧉', '🍾', '🧊', '🥄', '🍴', '🍽', '🥣', '🥡', '🫙',
-    '🧂'
-  ],
-  'Aktivitas': [
-    '⚽', '🏀', '🏈', '⚾', '🎾', '🏐', '🏉', '🎱', '🏓', '🏸',
-    '🏒', '🏑', '🥍', '🏏', '🪃', '🥅', '⛳', '🪁', '🏹', '🎣',
-    '🤿', '🥊', '🥋', '🎽', '🛹', '🛼', '🛷', '⛸', '🥌', '🎯',
-    '🪀', '🪂', '🎱', '🔮', '🎮', '🕹', '🎰', '🎲', '🧩', '♟',
-    '🎭', '🎨', '🧵', '🪡', '🧶', '🪢', '🎤', '🎧', '🎼', '🎹',
-    '🥁', '🪘', '🎷', '🎺', '🎸', '🪕', '🎻', '🎬', '🏆', '🎪',
-    '🎫', '🎟', '🎗', '🎖', '🏅', '🎽', '🏐', '🎳', '🪅', '🪆',
-    '🎎', '🎏', '🎐', '🎑', '🧧', '🎀', '🎁', '🎊', '🎉', '🎈',
-    '🎇', '🎆', '🧨', '🪔', '🧧', '🎎', '🎏', '🎐', '🎑', '🧨'
-  ],
-  'Bendera': [
-    '🇮🇩', '🇺🇸', '🇬🇧', '🇯🇵', '🇰🇷', '🇩🇪', '🇫🇷', '🇮🇹', '🇧🇷', '🇷🇺',
-    '🇨🇳', '🇮🇳', '🇦🇺', '🇨🇦', '🇲🇽', '🇪🇸', '🇵🇹', '🇳🇱', '🇧🇪', '🇨🇭',
-    '🇸🇪', '🇳🇴', '🇩🇰', '🇫🇮', '🇮🇸', '🇦🇹', '🇮🇪', '🇵🇱', '🇭🇺', '🇨🇿',
-    '🇸🇰', '🇷🇴', '🇧🇬', '🇬🇷', '🇹🇷', '🇸🇦', '🇦🇪', '🇮🇱', '🇿🇦', '🇳🇬',
-    '🇰🇪', '🇪🇬', '🇲🇦', '🇹🇭', '🇻🇳', '🇵🇭', '🇲🇾', '🇸🇬', '🇵🇰', '🇱🇰',
-    '🇧🇩', '🇳🇵', '🇲🇲', '🇰🇭', '🇱🇦', '🇹🇼', '🇭🇰', '🇲🇴', '🇯🇵', '🇰🇵',
-    '🇰🇷', '🇹🇯', '🇹🇲', '🇺🇿', '🇰🇿', '🇦🇿', '🇦🇲', '🇬🇪', '🇵🇰', '🇦🇫',
-    '🇮🇶', '🇸🇾', '🇱🇧', '🇯🇴', '🇵🇸', '🇶🇦', '🇧🇭', '🇴🇲', '🇾🇪', '🇦🇪',
-    '🇸🇦', '🇰🇼', '🇮🇷', '🇲🇾', '🇧🇳', '🇹🇱', '🇵🇬', '🇫🇯', '🇸🇧', '🇻🇺',
-    '🇳🇷', '🇵🇼', '🇫🇲', '🇲🇭', '🇰🇮', '🇹🇻', '🇼🇸', '🇦🇸', '🇨🇰', '🇳🇨',
-    '🇵🇫', '🇵🇳', '🇹🇰', '🇳🇺', '🇹🇴', '🇨🇨', '🇨🇽', '🇦🇨', '🇧🇻', '🇭🇲',
-    '🇳🇫', '🇮🇴', '🇩🇬', '🇦🇶', '🇹🇫', '🇬🇸', '🇵🇲', '🇸🇭', '🇲🇵', '🇺🇲',
-    '🇻🇮', '🇼🇫', '🇪🇺', '🇺🇳', '🏳️', '🏴', '🏴‍☠️', '🏁', '🚩', '🏳️‍🌈',
-    '🏳️‍⚧️', '🇺🇳', '🇦🇫', '🇦🇽', '🇦🇱', '🇩🇿', '🇦🇩', '🇦🇴', '🇦🇮', '🇦🇶',
-    '🇦🇬', '🇦🇷', '🇦🇲', '🇦🇼', '🇦🇺', '🇦🇹', '🇦🇿', '🇧🇸', '🇧🇭', '🇧🇩',
-    '🇧🇧', '🇧🇾', '🇧🇿', '🇧🇯', '🇧🇲', '🇧🇹', '🇧🇴', '🇧🇦', '🇧🇼', '🇧🇷',
-    '🇮🇴', '🇻🇬', '🇧🇳', '🇧🇬', '🇧🇫', '🇧🇮', '🇨🇻', '🇰🇭', '🇨🇲', '🇨🇦',
-    '🇮🇨', '🇨🇫', '🇹🇩', '🇨🇱', '🇨🇳', '🇨🇽', '🇨🇨', '🇨🇴', '🇰🇲', '🇨🇬',
-    '🇨🇩', '🇨🇰', '🇨🇷', '🇨🇮', '🇭🇷', '🇨🇺', '🇨🇼', '🇨🇾', '🇨🇿', '🇩🇰',
-    '🇩🇯', '🇩🇲', '🇩🇴', '🇪🇨', '🇪🇬', '🇸🇻', '🇬🇶', '🇪🇷', '🇪🇪', '🇸🇿',
-    '🇪🇹', '🇫🇰', '🇫🇴', '🇫🇯', '🇫🇮', '🇫🇷', '🇬🇫', '🇵🇫', '🇹🇫', '🇬🇦',
-    '🇬🇲', '🇬🇪', '🇩🇪', '🇬🇭', '🇬🇮', '🇬🇷', '🇬🇱', '🇬🇩', '🇬🇵', '🇬🇺',
-    '🇬🇹', '🇬🇬', '🇬🇳', '🇬🇼', '🇬🇾', '🇭🇹', '🇭🇳', '🇭🇰', '🇭🇺', '🇮🇸',
-    '🇮🇳', '🇮🇩', '🇮🇷', '🇮🇶', '🇮🇪', '🇮🇲', '🇮🇱', '🇮🇹', '🇯🇲', '🇯🇵',
-    '🇯🇪', '🇯🇴', '🇰🇿', '🇰🇪', '🇰🇮', '🇰🇼', '🇰🇬', '🇱🇦', '🇱🇻', '🇱🇧',
-    '🇱🇸', '🇱🇷', '🇱🇾', '🇱🇮', '🇱🇹', '🇱🇺', '🇲🇴', '🇲🇬', '🇲🇼', '🇲🇾',
-    '🇲🇻', '🇲🇱', '🇲🇹', '🇲🇭', '🇲🇶', '🇲🇷', '🇲🇺', '🇾🇹', '🇲🇽', '🇫🇲',
-    '🇲🇩', '🇲🇨', '🇲🇳', '🇲🇪', '🇲🇸', '🇲🇦', '🇲🇿', '🇲🇲', '🇳🇦', '🇳🇷',
-    '🇳🇵', '🇳🇱', '🇳🇨', '🇳🇿', '🇳🇮', '🇳🇪', '🇳🇬', '🇳🇺', '🇳🇫', '🇰🇵',
-    '🇲🇰', '🇲🇵', '🇳🇴', '🇴🇲', '🇵🇰', '🇵🇼', '🇵🇸', '🇵🇦', '🇵🇬', '🇵🇾',
-    '🇵🇪', '🇵🇭', '🇵🇳', '🇵🇱', '🇵🇹', '🇵🇷', '🇶🇦', '🇷🇪', '🇷🇴', '🇷🇺',
-    '🇷🇼', '🇼🇸', '🇸🇲', '🇸🇦', '🇸🇳', '🇷🇸', '🇸🇨', '🇸🇱', '🇸🇬', '🇸🇽',
-    '🇸🇰', '🇸🇮', '🇸🇧', '🇸🇴', '🇿🇦', '🇬🇸', '🇰🇷', '🇸🇸', '🇪🇸', '🇱🇰',
-    '🇧🇱', '🇸🇭', '🇰🇳', '🇱🇨', '🇲🇫', '🇵🇲', '🇻🇨', '🇸🇩', '🇸🇷', '🇸🇪',
-    '🇨🇭', '🇸🇾', '🇹🇼', '🇹🇯', '🇹🇿', '🇹🇭', '🇹🇱', '🇹🇬', '🇹🇰', '🇹🇴',
-    '🇹🇹', '🇹🇳', '🇹🇷', '🇹🇲', '🇹🇨', '🇹🇻', '🇺🇬', '🇺🇦', '🇦🇪', '🇬🇧',
-    '🇺🇸', '🇺🇾', '🇺🇿', '🇻🇺', '🇻🇦', '🇻🇪', '🇻🇳', '🇼🇫', '🇪🇭', '🇾🇪',
-    '🇿🇲', '🇿🇼'
-  ],
-  'Alam': [
-    '🌍', '🌎', '🌏', '🌐', '🗺', '🗾', '🧭', '🏔', '⛰', '🌋',
-    '🗻', '🏕', '🏖', '🏜', '🏝', '🏞', '🏟', '🏛', '🏗', '🧱',
-    '🏘', '🏚', '🏠', '🏡', '🏢', '🏣', '🏤', '🏥', '🏦', '🏨',
-    '🏩', '🏪', '🏫', '🏬', '🏭', '🏯', '🏰', '💒', '🗼', '🗽',
-    '⛪', '🕌', '🛕', '🕍', '⛩', '🕋', '⛲', '⛺', '🌁', '🌃',
-    '🏙', '🌄', '🌅', '🌆', '🌇', '🌉', '♨️', '🎠', '🎡', '🎢',
-    '💈', '🎪', '🚂', '🚃', '🚄', '🚅', '🚆', '🚇', '🚈', '🚉',
-    '🚊', '🚝', '🚞', '🚋', '🚌', '🚍', '🚎', '🚐', '🚑', '🚒',
-    '🚓', '🚔', '🚕', '🚖', '🚗', '🚘', '🚙', '🚚', '🚛', '🚜',
-    '🏎', '🏍', '🛵', '🦽', '🦼', '🛺', '🚲', '🛴', '🛹', '🚏',
-    '🛣', '🛤', '🛢', '⛽', '🚨', '🚥', '🚦', '🛑', '🚧', '⚓',
-    '⛵', '🛶', '🚤', '🛳', '⛴', '🛥', '🚢', '✈️', '🛩', '🛫',
-    '🛬', '🪂', '💺', '🚁', '🚟', '🚠', '🚡', '🛰', '🚀', '🛸',
-    '🛎', '🧳', '⌛', '⏳', '⌚', '⏰', '⏱', '⏲', '🕰', '🕛',
-    '🕧', '🕐', '🕜', '🕑', '🕝', '🕒', '🕞', '🕓', '🕟', '🕔',
-    '🕠', '🕕', '🕡', '🕖', '🕢', '🕗', '🕣', '🕘', '🕤', '🕙',
-    '🕥', '🕚', '🕦', '🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗',
-    '🌘', '🌙', '🌚', '🌛', '🌜', '🌡', '☀️', '🌝', '🌞', '🪐',
-    '⭐', '🌟', '🌠', '🌌', '☁️', '⛅', '⛈', '🌤', '🌥', '🌦',
-    '🌧', '🌨', '🌩', '🌪', '🌫', '🌬', '🌀', '🌈', '🌂', '☂️',
-    '☔', '⛱', '⚡', '❄️', '☃️', '⛄', '☄️', '🔥', '💧', '🌊',
-    '🎄', '✨', '🎋', '🎍'
-  ],
-  'Objek': [
-    '🧸', '🪀', '🪁', '🔮', '🧿', '🪄', '🧰', '🧲', '🪜', '🛠',
-    '🔪', '⚔️', '🗡', '🛡', '🔫', '🏹', '🪃', '🪚', '🔧', '🔨',
-    '🪓', '⛏', '🪙', '💎', '💳', '💰', '💴', '💵', '💶', '💷',
-    '💸', '🪔', '💡', '🔦', '🏮', '🪔', '📔', '📕', '📖', '📗',
-    '📘', '📙', '📚', '📓', '📒', '📃', '📜', '📄', '📰', '🗞',
-    '📑', '🔖', '🏷', '💰', '🪙', '💴', '💵', '💶', '💷', '💸',
-    '💳', '🧾', '✉️', '📧', '📨', '📩', '📤', '📥', '📦', '📫',
-    '📪', '📬', '📭', '📮', '🗳', '✏️', '✒️', '🖋', '🖊', '🖌',
-    '🖍', '📝', '💼', '📁', '📂', '🗂', '📅', '📆', '🗒', '🗓',
-    '📇', '📈', '📉', '📊', '📋', '📌', '📍', '📎', '🖇', '📏',
-    '📐', '✂️', '🗃', '🗄', '🗑', '🔒', '🔓', '🔏', '🔐', '🔑',
-    '🗝', '🔨', '🪓', '⛏', '⚒', '🛠', '🗡', '⚔️', '🔫', '🏹',
-    '🛡', '🔧', '🔩', '⚙️', '🗜', '⚖️', '🦯', '🔗', '⛓', '🧰',
-    '🧲', '🪜', '⚗️', '🧪', '🧫', '🧬', '🔬', '🔭', '📡', '💉',
-    '🩸', '💊', '🩹', '🩺', '🩻', '🚪', '🛗', '🪞', '🪟', '🛏',
-    '🛋', '🪑', '🚽', '🪠', '🚿', '🛁', '🪤', '🪒', '🧴', '🧷',
-    '🧹', '🧺', '🧻', '🪣', '🧼', '🪥', '🧽', '🧯', '🛒', '🚬',
-    '⚰️', '🪦', '⚱️', '🏺', '🗿', '🪧', '🪨', '🪵', '🛖', '🧱',
-    '🪞', '🪟', '🪑', '🛏', '🛋', '🚪', '🪜', '🛗', '🪠', '🚽',
-    '🚿', '🛁', '🪤', '🪒', '🧴', '🧷', '🧹', '🧺', '🧻', '🪣',
-    '🧼', '🪥', '🧽', '🧯', '🛒', '🚬', '⚰️', '🪦', '⚱️', '🏺',
-    '🗿', '🪧', '🪨', '🪵', '🛖', '🧱'
-  ],
-  'Simbol': [
-    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔',
-    '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️',
-    '✝️', '☪️', '🕉', '☸️', '✡️', '🔯', '🕎', '☯️', '☦️', '🛐',
-    '⛎', '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐',
-    '♑', '♒', '♓', '🆔', '⚛️', '🉑', '☢️', '☣️', '📴', '📳',
-    '🈶', '🈚', '🈸', '🈺', '🈷️', '✴️', '🆚', '💮', '🉐', '㊙️',
-    '㊗️', '🈴', '🈵', '🈹', '🈲', '🅰️', '🅱️', '🆎', '🆑', '🅾️',
-    '🆘', '❌', '⭕', '🛑', '⛔', '📛', '🚫', '💯', '💢', '♨️',
-    '🚷', '🚯', '🚳', '🚱', '🔞', '📵', '🚭', '❗', '❕', '❓',
-    '❔', '‼️', '⁉️', '🔅', '🔆', '〽️', '⚠️', '🚸', '🔱', '⚜️',
-    '🔰', '♻️', '✅', '🈯', '💹', '❇️', '✳️', '❎', '🌐', '💠',
-    'Ⓜ️', '🌀', '💤', '🏧', '🚾', '♿', '🅿️', '🈳', '🈂️', '🛂',
-    '🛃', '🛄', '🛅', '🚹', '🚺', '🚼', '🚻', '🚮', '🎦', '📶',
-    '🈁', '🔣', 'ℹ️', '🔤', '🔡', '🔠', '🆖', '🆗', '🆙', '🆒',
-    '🆕', '🆓', '0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣',
-    '8️⃣', '9️⃣', '🔟', '🔢', '#️⃣', '*️⃣', '⏏️', '▶️', '⏸', '⏯',
-    '⏹', '⏺', '⏭', '⏮', '⏩', '⏪', '⏫', '⏬', '◀️', '🔼',
-    '🔽', '➡️', '⬅️', '⬆️', '⬇️', '↗️', '↘️', '↙️', '↖️', '↕️',
-    '↔️', '↪️', '↩️', '⤴️', '⤵️', '🔀', '🔁', '🔂', '🔄', '🔃',
-    '🎵', '🎶', '➕', '➖', '✖️', '➗', '♾', '💲', '💱', '™️',
-    '©️', '®️', '〰️', '➰', '➿', '🔚', '🔙', '🔛', '🔝', '🔜',
-    '✔️', '☑️', '🔘', '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤',
-    '⚫', '⚪', '🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '🟫', '⬛',
-    '⬜', '◼️', '◻️', '◾', '◽', '▪️', '▫️', '🔶', '🔷', '🔸',
-    '🔹', '🔺', '🔻', '💠', '🔘', '🔳', '🔲', '🏁', '🚩', '🎌',
-    '🏴', '🏳️', '🏳️‍🌈', '🏳️‍⚧️', '🏴‍☠️'
-  ],
-  'Tangan': [
-    '👋', '🤚', '🖐', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞',
-    '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍',
-    '👎', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤲', '🤝',
-    '🙏', '✍️', '💅', '🤳', '💪', '🦾', '🦿', '🦵', '🦶', '👂',
-    '🦻', '👃',
-  ]
-   };
+  final Color _chatBubbleAdmin = const Color.fromARGB(255, 255, 141, 181);
 
- @override
+  @override
   void initState() {
     super.initState();
-    // Initialize "All" category with all emojis
-    _emojiCategories['All'] = _emojiCategories.values
-        .where((list) => list.isNotEmpty)
-        .expand((list) => list)
-        .toList();
+    EmojiData.initialize();
     _selectedEmojiCategory = 'All';
+    _searchController.addListener(_filterAdminList);
+    _scrollController.addListener(_handleScroll);
     initializeDateFormatting('id_ID').then((_) => _loadCurrentUser());
   }
 
@@ -256,8 +60,31 @@ class _ChatPageState extends State<ChatPage> {
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
+    _searchController.dispose();
     _messagesChannel?.unsubscribe();
+    _adminStatusChannel?.unsubscribe();
     super.dispose();
+  }
+
+  void _handleScroll() {
+    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent) {
+      if (!_isScrolling) {
+        _isScrolling = true;
+        _markMessagesAsRead();
+      }
+    } else {
+      _isScrolling = false;
+    }
+  }
+
+  void _filterAdminList() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredAdminList = _adminList.where((admin) {
+        final username = admin['username'].toString().toLowerCase();
+        return username.contains(query);
+      }).toList();
+    });
   }
 
   Future<void> _loadCurrentUser() async {
@@ -287,34 +114,178 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _fetchAdminList() async {
-    try {
-      final response = await _supabase
-          .from('users')
-          .select('id, username, roles, avatar_url')
-          .eq('roles', 'Admin')
-          .order('username', ascending: true);
+  try {
+    // First, get all admins
+    final adminResponse = await _supabase
+        .from('users')
+        .select('id, username, roles, avatar_url')
+        .eq('roles', 'Admin')
+        .order('username', ascending: true);
 
+    if (adminResponse.isEmpty) {
       if (mounted) {
         setState(() {
-          _adminList = List<Map<String, dynamic>>.from(response);
-          _adminList = _adminList.map((admin) {
-            return {
-              ...admin,
-              'id': admin['id'].toString(),
-            };
-          }).toList();
-          
-          // On web, select first admin by default
-          if (_adminList.isNotEmpty && !_isMobile()) {
-            _selectedAdminId = _adminList.first['id'];
-            _setupMessagesSubscription();
-          }
+          _adminList = [];
+          _filteredAdminList = [];
         });
+      }
+      return;
+    }
+
+    // For each admin, find their latest chat
+    List<Map<String, dynamic>> adminsWithLastChat = [];
+
+    for (var admin in adminResponse) {
+      final adminId = admin['id'];
+
+      // Find the latest chat where admin is sender or recipient
+      final lastChatResponse = await _supabase
+          .from('chats')
+          .select('created_at, message')
+          .or('sender_id.eq.$adminId,recipient_id.eq.$adminId')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      String lastMessage = lastChatResponse?['message'] ?? '';
+      DateTime? lastMessageTime;
+      
+      if (lastChatResponse != null && lastChatResponse['created_at'] != null) {
+        try {
+          dynamic createdAt = lastChatResponse['created_at'];
+          
+          if (createdAt is DateTime) {
+            lastMessageTime = createdAt;
+          } else if (createdAt is String) {
+            lastMessageTime = DateTime.tryParse(createdAt);
+          }
+        } catch (e) {
+          debugPrint('Error parsing date: $e');
+          lastMessageTime = null;
+        }
+      }
+
+      adminsWithLastChat.add({
+        ...admin,
+        'id': adminId.toString(),
+        'last_message': lastMessage,
+        'last_message_time': lastMessageTime?.toIso8601String(),
+      });
+    }
+
+    // Check if any admin has messages
+    final anyAdminHasMessages = adminsWithLastChat.any((admin) => admin['last_message_time'] != null);
+    
+    // Check if all admins have messages
+    final allAdminsHaveMessages = adminsWithLastChat.every((admin) => admin['last_message_time'] != null);
+
+    // Sort admins based on conditions
+    adminsWithLastChat.sort((a, b) {
+      // Case 1: No admins have messages - sort by username
+      if (!anyAdminHasMessages) {
+        return (a['username'] as String).compareTo(b['username'] as String);
+      }
+      
+      // Case 2: Some admins have messages
+      final aHasMessage = a['last_message_time'] != null;
+      final bHasMessage = b['last_message_time'] != null;
+      
+      // If one has message and other doesn't, the one with message comes first
+      if (aHasMessage && !bHasMessage) return -1;
+      if (!aHasMessage && bHasMessage) return 1;
+      
+      // If both have messages, sort by message time (newest first)
+      if (aHasMessage && bHasMessage) {
+        return (b['last_message_time'] as String).compareTo(a['last_message_time'] as String);
+      }
+      
+      // If neither has messages, sort by username
+      return (a['username'] as String).compareTo(b['username'] as String);
+    });
+
+    if (mounted) {
+      setState(() {
+        _adminList = adminsWithLastChat;
+        _filteredAdminList = List.from(_adminList);
+        
+        // Initialize unread counts
+        for (var admin in _adminList) {
+          _unreadCounts[admin['id']] = 0;
+        }
+        
+        _loadLastMessagesAndUnreadCounts();
+        _setupAdminStatusSubscription();
+      });
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal memuat daftar admin: $e')),
+      );
+    }
+  }
+}
+
+  void _setupAdminStatusSubscription() {
+    _adminStatusChannel?.unsubscribe();
+    
+    _adminStatusChannel = _supabase
+        .channel('admin_status_updates')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chats',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.neq,
+            column: 'sender_id',
+            value: _currentUserId,
+          ),
+          callback: (payload) {
+            _loadLastMessagesAndUnreadCounts();
+          },
+        )
+        .subscribe();
+  }
+
+  Future<void> _loadLastMessagesAndUnreadCounts() async {
+    if (_currentUserId == null) return;
+
+    try {
+      for (var admin in _adminList) {
+        // Get last message
+        final lastMessageResponse = await _supabase
+            .from('chats')
+            .select('message, created_at, is_read, sender_id')
+            .or('sender_id.eq.$_currentUserId,recipient_id.eq.$_currentUserId')
+            .or('sender_id.eq.${admin['id']},recipient_id.eq.${admin['id']}')
+            .order('created_at', ascending: false)
+            .limit(1);
+
+        if (lastMessageResponse.isNotEmpty) {
+          final lastMessage = lastMessageResponse[0];
+          admin['last_message'] = _convertUnicodeToEmoji(lastMessage['message']);
+          admin['last_message_time'] = lastMessage['created_at'];
+        }
+
+        // Get unread count
+        final unreadResponse = await _supabase
+            .from('chats')
+            .select('id')
+            .eq('recipient_id', _currentUserId as Object)
+            .eq('sender_id', admin['id'])
+            .eq('is_read', false);
+
+        final unreadCount = unreadResponse.length;
+        _unreadCounts[admin['id']] = unreadCount;
+      }
+
+      if (mounted) {
+        setState(() {});
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal memuat daftar admin: $e')),
+          SnackBar(content: Text('Gagal memuat pesan terakhir: $e')),
         );
       }
     }
@@ -333,6 +304,8 @@ class _ChatPageState extends State<ChatPage> {
           table: 'chats',
           callback: (payload) {
             _fetchMessages();
+            _loadLastMessagesAndUnreadCounts();
+            _fetchAdminList(); 
           },
         )
         .subscribe();
@@ -360,12 +333,12 @@ class _ChatPageState extends State<ChatPage> {
               'id': msg['id'].toString(),
               'sender_id': msg['sender_id'].toString(),
               'recipient_id': msg['recipient_id'].toString(),
-              'message': _convertUnicodeToEmoji(msg['message']), // Convert unicode to emoji
+              'message': _convertUnicodeToEmoji(msg['message']),
             };
           }).toList();
-          _markMessagesAsRead();
           _isFirstLoad = false;
         });
+        _markMessagesAsRead();
       }
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -386,12 +359,10 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  // Convert emoji to unicode for database storage
   String _convertEmojiToUnicode(String text) {
     return text.runes.map((rune) => '\\u{${rune.toRadixString(16)}}').join();
   }
 
-  // Convert unicode back to emoji for display
   String _convertUnicodeToEmoji(String text) {
     return text.replaceAllMapped(
       RegExp(r'\\u\{([0-9a-fA-F]+)\}'),
@@ -400,25 +371,53 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _markMessagesAsRead() async {
+  if (_selectedAdminId == null || _currentUserId == null) return;
+
+  try {
     final unreadMessages = _messages.where((msg) =>
-        msg['recipient_id'] == _currentUserId && msg['is_read'] == false).toList();
+        msg['sender_id'] == _selectedAdminId && 
+        msg['recipient_id'] == _currentUserId && 
+        msg['is_read'] == false).toList();
 
     if (unreadMessages.isNotEmpty) {
-      final unreadIds = unreadMessages.map((msg) => msg['id'].toString()).toList();
-      await _supabase
+      final unreadIds = unreadMessages.map((msg) => msg['id']).toList();
+      
+      // Update messages as read in database
+      final response = await _supabase
           .from('chats')
           .update({'is_read': true})
-          .in_('id', unreadIds)
-          .execute();
+          .in_('id', unreadIds);
+
+      if (response.error != null) {
+        throw response.error!;
+      }
+      
+      // Update local state to reflect read status
+      if (mounted) {
+        setState(() {
+          for (var msg in _messages) {
+            if (unreadIds.contains(msg['id'])) {
+              msg['is_read'] = true;
+            }
+          }
+          
+          // Update unread count
+          _unreadCounts[_selectedAdminId!] = 0;
+        });
+      }
+    }
+  } catch (e) {
+    if (mounted) {
+     
     }
   }
+}
 
   Future<void> _sendMessage() async {
     final messageText = _messageController.text.trim();
     if (messageText.isEmpty || _selectedAdminId == null || _currentUserId == null) return;
 
     try {
-      // Convert emoji to unicode before saving to database
       final messageToSend = _convertEmojiToUnicode(messageText);
       
       await _supabase.from('chats').insert({
@@ -430,7 +429,8 @@ class _ChatPageState extends State<ChatPage> {
       });
 
       _messageController.clear();
-      await _fetchMessages();
+
+       await _fetchAdminList();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -458,7 +458,6 @@ class _ChatPageState extends State<ChatPage> {
     final timeFormat = DateFormat('HH:mm');
     final dateFormat = DateFormat('EEEE, d MMMM y', 'id_ID');
 
-    // Check if we need to show date header
     bool showDateHeader = false;
     if (index == 0) {
       showDateHeader = true;
@@ -569,7 +568,7 @@ class _ChatPageState extends State<ChatPage> {
                               color: isCurrentUser ? Colors.white70 : Colors.black54,
                             ),
                           ),
-                          if (isCurrentUser)
+                        
                             Padding(
                               padding: const EdgeInsets.only(left: 4.0),
                               child: Icon(
@@ -597,56 +596,60 @@ class _ChatPageState extends State<ChatPage> {
            date1.day == date2.day;
   }
 
- Widget _buildEmptyChat() {
-  return Center(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(
-          Icons.spa,
-          size: 80,
-          color: _primaryColor.withOpacity(0.3),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          'Citra Kosmetik',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: _primaryColor,
+  Widget _buildEmptyChat() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.spa,
+            size: 80,
+            color: _primaryColor.withOpacity(0.3),
           ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          'Pilih admin dari daftar untuk memulai percakapan',
-          style: TextStyle(
-            fontSize: 16,
-            color: _darkPink,
-          ),
-        ),
-        const SizedBox(height: 20),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _primaryColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
+          const SizedBox(height: 20),
+          Text(
+            'Citra Kosmetik',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: _primaryColor,
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           ),
-          onPressed: () {
-            if (_adminList.isNotEmpty) {
-              _selectAdmin(_adminList.first['id']);
-            }
-          },
-          child: Text(
-            'Mulai Chat',
-            style: TextStyle(color: _textColor),
+          const SizedBox(height: 10),
+          Text(
+            _selectedAdminId == null 
+                ? 'Pilih admin dari daftar untuk memulai percakapan'
+                : 'Belum ada pesan',
+            style: TextStyle(
+              fontSize: 16,
+              color: _darkPink,
+            ),
           ),
-        ),
-      ],
-    ),
-  );
-}
+          if (_selectedAdminId == null) ...[
+            const SizedBox(height: 20),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              onPressed: () {
+                if (_adminList.isNotEmpty) {
+                  _selectAdmin(_adminList.first['id']);
+                }
+              },
+              child: Text(
+                'Mulai Chat',
+                style: TextStyle(color: _textColor),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _buildChatContent() {
     if (_selectedAdminId == null) {
@@ -687,100 +690,166 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
- Widget _buildWebLayout() {
-  return Row(
-    children: [
-      // Admin List Sidebar
-      Container(
-        width: 150,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border(right: BorderSide(color: _secondaryColor)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.pink.withOpacity(0.1),
-              blurRadius: 8,
-              offset: const Offset(2, 0),
-            ),
-          ],
-        ),
-        child: _buildAdminList(),
-      ),
-      // Chat Area
-      Expanded(
-        child: _selectedAdminId == null 
-            ? _buildEmptyChat() // Tampilkan empty chat jika belum ada admin yang dipilih
-            : _buildChatScreen(), // Tampilkan chat screen jika admin dipilih
-      ),
-    ],
-  );
-}
-  Widget _buildAdminList() {
-    return ListView.builder(
-      itemCount: _adminList.length,
-      itemBuilder: (context, index) {
-        final admin = _adminList[index];
-        return Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: InkWell(
-            onTap: () => _selectAdmin(admin['id'].toString()),
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: admin['id'] == _selectedAdminId 
-                    ? _primaryColor.withOpacity(0.2)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(20),
+  Widget _buildWebLayout() {
+    return Row(
+      children: [
+        // Admin List Sidebar
+        Container(
+          width: 300,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(right: BorderSide(color: _secondaryColor)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.pink.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(2, 0),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: _primaryColor,
-                    backgroundImage: admin['avatar_url'] != null
-                        ? NetworkImage(admin['avatar_url'])
-                        : null,
-                    child: admin['avatar_url'] == null
-                        ? Icon(Icons.person, color: _textColor)
-                        : null,
+            ],
+          ),
+          child: Column(
+            children: [
+              // Search Bar
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: _lightPink,
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    admin['username'].toString().split(' ').first,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _darkPink,
-                      fontWeight: admin['id'] == _selectedAdminId 
-                          ? FontWeight.bold 
-                          : FontWeight.normal,
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Cari...',
+                      prefixIcon: Icon(Icons.search, color: _primaryColor),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                     ),
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
                   ),
+                ),
+              ),
+              Expanded(
+                child: _buildAdminList(),
+              ),
+            ],
+          ),
+        ),
+        // Chat Area
+        Expanded(
+          child: _selectedAdminId == null 
+              ? _buildEmptyChat()
+              : _buildChatScreen(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAdminList() {
+    final listToShow = _searchController.text.isEmpty ? _adminList : _filteredAdminList;
+    
+    return ListView.builder(
+      itemCount: listToShow.length,
+      itemBuilder: (context, index) {
+        final admin = listToShow[index];
+        final lastMessageTime = admin['last_message_time'] != null 
+            ? DateTime.parse(admin['last_message_time'])
+            : null;
+        final timeFormat = DateFormat('HH:mm');
+        final unreadCount = _unreadCounts[admin['id']] ?? 0;
+        
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: admin['id'] == _selectedAdminId 
+                ? _primaryColor.withOpacity(0.1)
+                : Colors.transparent,
+          ),
+          child: ListTile(
+            onTap: () => _selectAdmin(admin['id'].toString()),
+            leading: CircleAvatar(
+              radius: 24,
+              backgroundColor: _primaryColor,
+              backgroundImage: admin['avatar_url'] != null
+                  ? NetworkImage(admin['avatar_url'])
+                  : null,
+              child: admin['avatar_url'] == null
+                  ? Icon(Icons.person, color: _textColor)
+                  : null,
+            ),
+            title: Text(
+              admin['username'],
+              style: TextStyle(
+                fontWeight: admin['id'] == _selectedAdminId 
+                    ? FontWeight.bold 
+                    : FontWeight.normal,
+                color: _darkPink,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              admin['last_message']?.toString() ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+              ),
+            ),
+            trailing: SizedBox(
+              width: 80,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (lastMessageTime != null)
+                    Text(
+                      timeFormat.format(lastMessageTime),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  const SizedBox(height: 4),
+                  if (unreadCount > 0)
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: _primaryColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        unreadCount.toString(),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           ),
         );
       },
     );
   }
 
-    Widget _buildEmojiPicker() {
+  Widget _buildEmojiPicker() {
     return Container(
       height: 250,
       color: _lightPink,
       child: Column(
         children: [
-          // Emoji category tabs
           SizedBox(
             height: 40,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              children: _emojiCategories.keys.map((category) {
+              children: EmojiData.categories.keys.map((category) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8.0),
                   child: TextButton(
@@ -809,7 +878,6 @@ class _ChatPageState extends State<ChatPage> {
               }).toList(),
             ),
           ),
-          // Emoji grid
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.all(8),
@@ -819,12 +887,12 @@ class _ChatPageState extends State<ChatPage> {
                 crossAxisSpacing: 8,
               ),
               itemCount: _selectedEmojiCategory == 'All'
-                  ? _emojiCategories['All']!.length
-                  : _emojiCategories[_selectedEmojiCategory]!.length,
+                  ? EmojiData.categories['All']!.length
+                  : EmojiData.categories[_selectedEmojiCategory]!.length,
               itemBuilder: (context, index) {
                 final emoji = _selectedEmojiCategory == 'All'
-                    ? _emojiCategories['All']![index]
-                    : _emojiCategories[_selectedEmojiCategory]![index];
+                    ? EmojiData.categories['All']![index]
+                    : EmojiData.categories[_selectedEmojiCategory]![index];
                 
                 return GestureDetector(
                   onTap: () {
@@ -1064,6 +1132,8 @@ class _ChatPageState extends State<ChatPage> {
   }
 }
 
-extension on PostgrestFilterBuilder {
-  in_(String s, List<String> unreadIds) {}
+extension PostgrestFilterBuilderExtension on PostgrestFilterBuilder {
+  PostgrestFilterBuilder in_(String column, List<dynamic> values) {
+    return inFilter(column, values);
+  }
 }
