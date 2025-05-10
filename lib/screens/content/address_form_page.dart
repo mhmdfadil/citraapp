@@ -131,7 +131,7 @@ if (currentAddress != fullAddress) {
         throw Exception('Failed to load provinces: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error loading provinces: $e');
+     
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Gagal memuat data provinsi: $e')),
       );

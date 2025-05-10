@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '/screens/widget/appbar_a.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '/register.dart';
-import 'package:citraapp/screens/content/product_detail_page.dart'; // Import the product detail page
+import 'package:citraapp/screens/content/product_detail_page.dart';
 
 class HomeContent extends StatefulWidget {
   @override
@@ -14,11 +14,11 @@ class _HomeContentState extends State<HomeContent> {
   bool _showPopup = false;
   bool _isCheckingSession = true;
   bool _temporarilyHidden = false;
-  bool _popupShown = false; // Track if popup has been shown
+  bool _popupShown = false;
   final supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _products = [];
   bool _isLoadingProducts = true;
-  final String _bucketName = 'picture-products'; // Supabase bucket name
+  final String _bucketName = 'picture-products';
 
   @override
   void initState() {
@@ -30,15 +30,13 @@ class _HomeContentState extends State<HomeContent> {
     _fetchProducts();
   }
 
- Future<void> _refreshProducts() async {
+  Future<void> _refreshProducts() async {
     setState(() {
       _isLoadingProducts = true;
     });
     await _fetchProducts();
   }
 
-  
-  // Modify the product detail navigation to handle refresh
   void _navigateToProductDetail(BuildContext context, String productId) async {
     final result = await Navigator.push(
       context,
@@ -49,12 +47,11 @@ class _HomeContentState extends State<HomeContent> {
       ),
     );
     
-    // If we got a result (order was placed), refresh products
     if (result == true) {
       await _refreshProducts();
     }
   }
-  // Function to format sold count with detailed ranges
+
   String _formatSoldCount(int sold) {
     if (sold < 10) {
       return sold.toString();
@@ -99,12 +96,10 @@ class _HomeContentState extends State<HomeContent> {
   String _getImageUrl(String imagePath) {
     if (imagePath.isEmpty) return '';
     
-    // If it's already a full URL, return as is
     if (imagePath.startsWith('http')) {
       return imagePath;
     }
     
-    // Get the public URL from Supabase Storage
     final String publicUrl = supabase
         .storage
         .from(_bucketName)
@@ -114,7 +109,7 @@ class _HomeContentState extends State<HomeContent> {
   }
 
   void _handleAuthChange(Session? session) async {
-    if (mounted && !_popupShown) { // Only handle if popup hasn't been shown
+    if (mounted && !_popupShown) {
       final prefs = await SharedPreferences.getInstance();
       final hasUserId = prefs.getString('user_id') != null;
       
@@ -135,7 +130,7 @@ class _HomeContentState extends State<HomeContent> {
       final hasUserId = prefs.getString('user_id') != null;
       final session = supabase.auth.currentSession;
       
-      if (mounted && !_popupShown) { // Only check if popup hasn't been shown
+      if (mounted && !_popupShown) {
         setState(() {
           _showPopup = (session == null && !hasUserId) && !_temporarilyHidden;
           _isCheckingSession = false;
@@ -160,7 +155,7 @@ class _HomeContentState extends State<HomeContent> {
   }
 
   void _navigateToRegister(BuildContext context) {
-    Navigator.pop(context); // Close the dialog first
+    Navigator.pop(context);
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => RegisterPage()),
@@ -168,7 +163,7 @@ class _HomeContentState extends State<HomeContent> {
   }
 
   Future<void> _showRegisterDialog() async {
-    if (_popupShown) return; // Prevent showing popup multiple times
+    if (_popupShown) return;
     
     setState(() {
       _popupShown = true;
@@ -176,7 +171,7 @@ class _HomeContentState extends State<HomeContent> {
     
     await showDialog(
       context: context,
-      barrierDismissible: false, // Prevent closing by tapping outside
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           contentPadding: EdgeInsets.zero,
@@ -295,18 +290,22 @@ class _HomeContentState extends State<HomeContent> {
     );
   }
 
-    // Update the product grid item builder
   Widget _buildProductGrid() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth > 600 ? 4 : 2;
+        // Responsive grid based on screen width
+        final crossAxisCount = constraints.maxWidth > 600 
+            ? 4 
+            : constraints.maxWidth > 400 
+                ? 3 
+                : 2;
         
         return GridView.builder(
           shrinkWrap: true,
           physics: NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
-            childAspectRatio: 0.68,
+            childAspectRatio: 0.7, // Adjusted aspect ratio
             mainAxisSpacing: 16,
             crossAxisSpacing: 16,
           ),
@@ -317,19 +316,15 @@ class _HomeContentState extends State<HomeContent> {
             final soldCount = product['sold'] ?? 0;
             final formattedSold = _formatSoldCount(soldCount is int ? soldCount : int.tryParse(soldCount.toString()) ?? 0);
             
-            return GestureDetector(
-              onTap: () {
-                _navigateToProductDetail(context, product['id'].toString());
-              },
-              child: ProductCard(
-                imageUrl: imageUrl,
-                title: product['name'] ?? 'No Name',
-                price: 'Rp ${(product['price_display']?.toStringAsFixed(0)?.replaceAllMapped(
-                  RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                  (Match m) => '${m[1]}.',
-                ) ?? '0')}',
-                sold: '$formattedSold terjual',
-              ),
+            return ProductCard(
+              imageUrl: imageUrl,
+              title: product['name'] ?? 'No Name',
+              price: 'Rp ${(product['price_display']?.toStringAsFixed(0)?.replaceAllMapped(
+                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                (Match m) => '${m[1]}.',
+              ) ?? '0')}',
+              sold: '$formattedSold terjual',
+              onTap: () => _navigateToProductDetail(context, product['id'].toString()),
             );
           },
         );
@@ -343,129 +338,163 @@ class ProductCard extends StatelessWidget {
   final String title;
   final String price;
   final String sold;
+  final VoidCallback onTap;
 
   const ProductCard({
     required this.imageUrl,
     required this.title,
     required this.price,
     required this.sold,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 4,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Container(
-        constraints: BoxConstraints(
-          minHeight: 0, // Remove minimum height constraints
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min, // Important for proper sizing
-          children: [
-            // Square image container
-            AspectRatio(
-              aspectRatio: 1,
-              child: ClipRRect(
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(12),
-                ),
-                child: imageUrl.isNotEmpty
-                    ? Image.network(
-                        imageUrl,
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.cover,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Center(
-                            child: CircularProgressIndicator(
-                              value: loadingProgress.expectedTotalBytes != null
-                                  ? loadingProgress.cumulativeBytesLoaded /
-                                      loadingProgress.expectedTotalBytes!
-                                  : null,
-                            ),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) => 
-                            Image.asset(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calculate font sizes based on card width
+        final titleFontSize = constraints.maxWidth * 0.045;
+        final priceFontSize = constraints.maxWidth * 0.05;
+        final soldFontSize = constraints.maxWidth * 0.035;
+
+        return GestureDetector(
+          onTap: onTap,
+          child: Card(
+            elevation: 4,
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Container(
+              constraints: BoxConstraints(
+                minWidth: 0,
+                minHeight: 0,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Image container with fixed aspect ratio
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(12),
+                        ),
+                        color: Colors.grey[200],
+                      ),
+                      child: imageUrl.isNotEmpty
+                          ? Image.network(
+                              imageUrl,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return Center(
+                                  child: CircularProgressIndicator(
+                                    value: loadingProgress.expectedTotalBytes != null
+                                        ? loadingProgress.cumulativeBytesLoaded /
+                                            loadingProgress.expectedTotalBytes!
+                                        : null,
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) => 
+                                  Image.asset(
+                                    'assets/images/placeholder.png',
+                                    fit: BoxFit.cover,
+                                  ),
+                            )
+                          : Image.asset(
                               'assets/images/placeholder.png',
-                              width: double.infinity,
-                              height: double.infinity,
                               fit: BoxFit.cover,
                             ),
-                      )
-                    : Image.asset(
-                        'assets/images/placeholder.png',
-                        width: double.infinity,
-                        height: double.infinity,
-                        fit: BoxFit.cover,
-                      ),
-              ),
-            ),
-            // Content with flexible space
-            Flexible(
-              child: Padding(
-                padding: EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      price,
-                      style: TextStyle(
-                        color: Colors.blue,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  ),
+                  
+                  // Content container with flexible padding
+                  Padding(
+                    padding: EdgeInsets.all(constraints.maxWidth * 0.04), // Responsive padding
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.local_shipping,
-                              color: Colors.grey,
-                              size: 16,
-                            ),
-                            SizedBox(width: 4),
-                            Icon(Icons.credit_card, color: Colors.grey, size: 16),
-                          ],
-                        ),
-                        Container(
-                          constraints: BoxConstraints(maxWidth: 70), // Limit width of sold text
+                        // Title with max lines and overflow
+                        SizedBox(
+                          height: constraints.maxWidth * 0.12, // Fixed height for title
                           child: Text(
-                            sold,
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                            title,
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.bold,
+                              fontSize: titleFontSize,
+                            ),
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        
+                        SizedBox(height: constraints.maxWidth * 0.02),
+                        
+                        // Price
+                        Text(
+                          price,
+                          style: TextStyle(
+                            color: Colors.blue,
+                            fontWeight: FontWeight.bold,
+                            fontSize: priceFontSize,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        
+                        SizedBox(height: constraints.maxWidth * 0.02),
+                        
+                        // Bottom row with icons and sold count
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.local_shipping,
+                                  color: Colors.grey,
+                                  size: constraints.maxWidth * 0.05,
+                                ),
+                                SizedBox(width: constraints.maxWidth * 0.02),
+                                Icon(
+                                  Icons.credit_card, 
+                                  color: Colors.grey, 
+                                  size: constraints.maxWidth * 0.05,
+                                ),
+                              ],
+                            ),
+                            // Sold count with limited width
+                            Container(
+                              constraints: BoxConstraints(
+                                maxWidth: constraints.maxWidth * 0.35,
+                              ),
+                              child: Text(
+                                sold,
+                                style: TextStyle(
+                                  color: Colors.grey, 
+                                  fontSize: soldFontSize,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

@@ -1,119 +1,95 @@
-import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:developer' as developer;
 
 class MidtransService {
-  static const String _sandboxUrl = 'https://api.sandbox.midtrans.com/v2/charge';
-  static const String _productionUrl = 'https://api.midtrans.com/v2/charge';
+  // Gunakan endpoint API yang benar (v2)
+  static const String _baseUrl = 'https://api.sandbox.midtrans.com';
+  static const String _snapUrl = '$_baseUrl/v2/charge';
+  static const String _midtransScriptUrl = 'https://app.sandbox.midtrans.com/snap/snap.js';
   
-  // Ganti dengan server key Anda yang benar
-  static const String _serverKey = 'SB-Mid-server-3VhdO-VCz8m-XZw9YF5GVwiV';
-  
+  // Pastikan kredensial sandbox Anda valid
+  static const String _clientKey = 'SB-Mid-client-YMRu2YOAC3k8b2SA'; // Ganti dengan client key Anda
+  static const String _serverKey = 'SB-Mid-server-3VhdO-VCz8m-XZw9YF5GVwiV'; // Ganti dengan server key Anda
+
   static Future<Map<String, dynamic>> createTransaction({
     required String orderId,
-    required double amount,
-    required List<Map<String, dynamic>> items,
-    required Map<String, dynamic> customerDetails,
-    required String paymentMethod,
+    required double grossAmount,
+    String? paymentMethod,
   }) async {
-    try {
-      final isSandbox = true; // Set false untuk production
-      final url = isSandbox ? _sandboxUrl : _productionUrl;
-      
-      // Validasi payment method
-      if (!_isValidPaymentMethod(paymentMethod)) {
-        throw Exception('Payment method $paymentMethod not supported');
-      }
-
-      // Prepare transaction details
-      final transactionDetails = {
+    final url = Uri.parse(_snapUrl);
+    
+    // Basic auth header dengan encoding yang benar
+    final auth = 'Basic ${base64Encode(utf8.encode('$_serverKey:'))}';
+    
+    // Request body sesuai dokumentasi Midtrans
+    final body = <String, dynamic>{
+      'payment_type': 'bank_transfer', // Default payment type
+      'transaction_details': {
         'order_id': orderId,
-        'gross_amount': amount.toInt(),
-      };
+        'gross_amount': grossAmount.toInt(), // Midtrans expects integer
+      },
+    };
 
-      // Prepare payment-specific parameters
-      final paymentConfig = _getPaymentConfig(paymentMethod, amount);
-      
-      // Prepare complete request body
-      final requestBody = {
-        'payment_type': paymentConfig['payment_type'],
-        'transaction_details': transactionDetails,
-        'item_details': items,
-        'customer_details': customerDetails,
-        ...paymentConfig['params'],
-      };
+    // Add specific payment method details
+    if (paymentMethod != null) {
+      switch (paymentMethod.toUpperCase()) {
+        case 'BSI':
+          body['payment_type'] = 'bank_transfer';
+          body['bank_transfer'] = {'bank': 'bsi'};
+          break;
+        case 'SHOPEEPAY':
+          body['payment_type'] = 'shopeepay';
+          body['shopeepay'] = {
+            'callback_url': 'citraapp://midtrans-callback' // Deep link ke aplikasi
+          };
+          break;
+        case 'GOPAY':
+          body['payment_type'] = 'gopay';
+          break;
+        default:
+          body['payment_type'] = paymentMethod.toLowerCase();
+      }
+    }
 
-      debugPrint('Midtrans Request: ${jsonEncode(requestBody)}');
+    try {
+      // Debug logging sebelum request
+      developer.log('Midtrans Request to: $url');
+      developer.log('Request Body: ${jsonEncode(body)}');
 
       final response = await http.post(
-        Uri.parse(url),
+        url,
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
-          'Authorization': 'Basic ${base64Encode(utf8.encode('$_serverKey:'))}',
+          'Authorization': auth,
         },
-        body: jsonEncode(requestBody),
+        body: jsonEncode(body),
       ).timeout(const Duration(seconds: 30));
 
-      debugPrint('Midtrans Response: ${response.statusCode} - ${response.body}');
+      // Debug logging setelah response
+      developer.log('Midtrans Response: ${response.statusCode}');
+      developer.log('Response Body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        return jsonDecode(response.body);
+        return jsonDecode(response.body) as Map<String, dynamic>;
       } else {
-        throw Exception('Failed to charge: ${response.statusCode} - ${response.body}');
+        // Coba parse error message
+        try {
+          final errorResponse = jsonDecode(response.body) as Map<String, dynamic>;
+          throw Exception('Midtrans Error: ${errorResponse['error_messages'] ?? errorResponse['message'] ?? response.body}');
+        } catch (_) {
+          throw Exception('Failed to create transaction. Status: ${response.statusCode}');
+        }
       }
+    } on http.ClientException catch (e) {
+      throw Exception('Network error: ${e.message}');
+    } on FormatException catch (e) {
+      throw Exception('Invalid response format: ${e.message}');
     } catch (e) {
-      debugPrint('Midtrans Error: $e');
-      rethrow;
+      throw Exception('Error processing Midtrans payment: $e');
     }
   }
-
-  static bool _isValidPaymentMethod(String paymentMethod) {
-    final supportedMethods = ['BSI', 'DANA', 'COD', 'BCA', 'BRI', 'BNI', 'MANDIRI', 'PERMATA', 'QRIS'];
-    return supportedMethods.contains(paymentMethod.toUpperCase());
-  }
-
-  static Map<String, dynamic> _getPaymentConfig(String paymentMethod, double amount) {
-    switch (paymentMethod.toUpperCase()) {
-      case 'BSI':
-        return {
-          'payment_type': 'bank_transfer',
-          'params': {
-            'bank_transfer': {
-              'bank': 'bsi',
-              'va_number': _generateVirtualAccountNumber(),
-            }
-          }
-        };
-      case 'DANA':
-        return {
-          'payment_type': 'qris',
-          'params': {
-            'qris': {
-              'acquirer': 'dana',
-            }
-          }
-        };
-      case 'BCA':
-        return {
-          'payment_type': 'bank_transfer',
-          'params': {
-            'bank_transfer': {
-              'bank': 'bca',
-              'va_number': _generateVirtualAccountNumber(),
-            }
-          }
-        };
-      case 'COD':
-        throw Exception('COD payments should be handled locally');
-      default:
-        throw Exception('Payment method $paymentMethod not supported');
-    }
-  }
-
-  static String _generateVirtualAccountNumber() {
-    // Generate random VA number (8 digits)
-    final random = DateTime.now().millisecondsSinceEpoch.toString();
-    return random.substring(random.length - 8);
-  }
+  
+  static String get midtransScriptUrl => _midtransScriptUrl;
 }

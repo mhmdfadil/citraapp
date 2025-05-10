@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '/screens/content/cart_screen.dart';
 import '/screens/content/address_page.dart';
@@ -6,6 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:webview_flutter/webview_flutter.dart'; // Untuk menampilkan Snap Midtrans
+import '/utils/midtrans_service.dart'; // Import service Midtrans
+import 'package:url_launcher/url_launcher.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class CheckoutPage extends StatefulWidget {
   final List<CartItem> cartItems;
@@ -224,9 +229,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
               .eq('id', orderId);
               
           _showOrderSuccess(context, orderNumber);
-        } else if (selectedPaymentMethod == 'BSI' || selectedPaymentMethod == 'DANA') {
-          // For online payments, redirect to payment gateway
-          _showPaymentInstructions(context, orderNumber);
+        } else if (selectedPaymentMethod == 'BSI' || selectedPaymentMethod == 'DANA' || selectedPaymentMethod == 'GOPAY' || selectedPaymentMethod == 'SHOPEEPAY') {
+          // For online payments, process with Midtrans
+          await _processMidtransPayment(orderNumber, finalTotal);
         }
       }
     } catch (e) {
@@ -238,6 +243,372 @@ class _CheckoutPageState extends State<CheckoutPage> {
       setState(() => isProcessingOrder = false);
     }
   }
+
+// Fungsi untuk memproses pembayaran
+Future<void> _processMidtransPayment(String orderId, double amount) async {
+  try {
+    final response = await MidtransService.createTransaction(
+      orderId: orderId,
+      grossAmount: amount,
+      paymentMethod: selectedPaymentMethod,
+    );
+
+    if (selectedPaymentMethod == 'BSI') {
+      final vaNumber = response['va_numbers'][0]['va_number'];
+      _showBankTransferInstructions(context, vaNumber, orderId);
+    } else if (selectedPaymentMethod == 'SHOPEEPAY') {
+      final deeplinkUrl = response['actions'][0]['url']; // URL deeplink-redirect
+      _showEWalletInstructions(context, 'ShopeePay', deeplinkUrl, orderId);
+    } else if (selectedPaymentMethod == 'GOPAY') {
+      final deeplinkUrl = response['actions'][1]['url']; // URL deeplink-redirect
+      _showEWalletInstructions(context, 'GoPay', deeplinkUrl, orderId);
+    } else if (selectedPaymentMethod == 'DANA') {
+      final redirectUrl = response['actions'][0]['url'];
+      _showMidtransSnap(redirectUrl, orderId);
+    }
+  } catch (e) {
+    debugPrint('Error processing payment: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Gagal memproses pembayaran: ${e.toString()}')),
+    );
+  }
+}
+
+// Tampilan instruksi pembayaran e-wallet dengan QR code dari deeplink
+void _showEWalletInstructions(BuildContext context, String walletName, String deeplinkUrl, String orderNumber) {
+  final isShopeePay = walletName == 'ShopeePay';
+  
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Container(
+        padding: EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: isShopeePay ? Colors.orange : Colors.blue,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.wallet, color: Colors.white),
+            SizedBox(width: 10),
+            Text(walletName, style: TextStyle(color: Colors.white)),
+          ],
+        ),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildStoreInfoCard(orderNumber),
+            SizedBox(height: 20),
+            
+            Card(
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text('QR Code Pembayaran $walletName', 
+                         style: TextStyle(fontSize: 16)),
+                    SizedBox(height: 16),
+                    Container(
+                      padding: EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: _buildQRCodeWidget(deeplinkUrl), // Widget QR code dari deeplink
+                    ),
+                    SizedBox(height: 16),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isShopeePay ? Colors.orange : Colors.blue,
+                      ),
+                     onPressed: () async {
+                        try {
+                          // Langsung buka URL Midtrans di browser
+                          await launch(
+                            deeplinkUrl,
+                            forceSafariVC: false, // Buka di browser eksternal
+                            universalLinksOnly: false,
+                          );
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Gagal membuka halaman pembayaran'),
+                              duration: Duration(seconds: 3),
+                            ),
+                          );
+                        }
+                      },
+                      child: Text('Buka di $walletName', 
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                    SizedBox(height: 16),
+                    Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
+                    SizedBox(height: 8),
+                    Text(
+                      'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
+                        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                        (Match m) => '${m[1]}.',
+                      )}',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green[800],
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'Scan QR code untuk membayar via $walletName',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Tutup'),
+        ),
+        // ElevatedButton(
+        //   style: ElevatedButton.styleFrom(
+        //     backgroundColor: isShopeePay ? Colors.orange : Colors.blue,
+        //   ),
+        //   onPressed: () {
+        //     Navigator.of(context).pop();
+        //     _showOrderSuccess(context, orderNumber);
+        //   },
+        //   child: Text('Saya Sudah Bayar', 
+        //       style: TextStyle(color: Colors.white)),
+        // ),
+      ],
+    ),
+  );
+}
+
+// Widget untuk menampilkan QR code dari URL
+Widget _buildQRCodeWidget(String deeplinkUrl) {
+  // Menggunakan package qr_flutter untuk generate QR code
+  return SizedBox(
+    width: 200,
+    height: 200,
+    child: QrImageView(
+      data: deeplinkUrl,
+      version: QrVersions.auto,
+      size: 200,
+      gapless: false,
+      embeddedImageStyle: QrEmbeddedImageStyle(
+        size: Size(40, 40),
+      ),
+    ),
+  );
+}
+
+void _showBankTransferInstructions(BuildContext context, String vaNumber, String orderNumber) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      title: Container(
+        padding: EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.blue[800],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.account_balance, color: Colors.white),
+            SizedBox(width: 10),
+            Text('BSI Virtual Account', style: TextStyle(color: Colors.white)),
+          ],
+        ),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Store Information
+            _buildStoreInfoCard(orderNumber),
+            SizedBox(height: 20),
+            
+            // Payment Info
+            Card(
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Text('Nomor Virtual Account', style: TextStyle(fontSize: 16)),
+                    SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          vaNumber,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[800],
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.copy, color: Colors.blue),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: vaNumber));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Nomor VA berhasil disalin!')),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    Divider(),
+                    SizedBox(height: 8),
+                    Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
+                    SizedBox(height: 8),
+                    Text(
+                      'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
+                        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                        (Match m) => '${m[1]}.',
+                      )}',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green[800],
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'Pembayaran akan diproses otomatis setelah transfer',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Tutup', style: TextStyle(color: Colors.blue[800])),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue[800],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          onPressed: () {
+            Navigator.of(context).pop();
+            _showOrderSuccess(context, orderNumber);
+          },
+          child: Text('Saya Sudah Bayar', style: TextStyle(color: Colors.white)),
+        ),
+      ],
+    ),
+  );
+}
+
+
+Widget _buildStoreInfoCard(String orderNumber) {
+  return Card(
+    elevation: 2,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+      side: BorderSide(color: Colors.grey[300]!),
+    ),
+    child: Padding(
+      padding: EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.store, color: Colors.blue[800], size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Toko Citra Cosmetic',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[800],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Jl. Muara Duara, Kota Lhokseumawe',
+            style: TextStyle(fontSize: 14),
+          ),
+          Text(
+            'Aceh Utara',
+            style: TextStyle(fontSize: 14),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'No. Pesanan: ${orderNumber}',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+void _showMidtransSnap(String redirectUrl, String orderNumber) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Complete Payment'),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () {
+              Navigator.pop(context);
+              _showOrderSuccess(context, orderNumber);
+            },
+          ),
+        ),
+        body: WebView(
+          initialUrl: redirectUrl,
+          javascriptMode: JavascriptMode.unrestricted,
+          navigationDelegate: (NavigationRequest request) {
+            if (request.url.contains('/status/') || 
+                request.url.contains('status_code=200')) {
+              Navigator.pop(context);
+              _showOrderSuccess(context, orderNumber);
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
+        ),
+      ),
+    ),
+  );
+}
 
   Future<void> _updateProductInventory(CartItem item) async {
     try {
@@ -331,7 +702,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             const SizedBox(height: 16),
             if (selectedPaymentMethod == 'COD')
               const Text('Your order will be processed soon'),
-            if (selectedPaymentMethod == 'BSI' || selectedPaymentMethod == 'DANA')
+            if (selectedPaymentMethod == 'BSI' || selectedPaymentMethod == 'DANA' || selectedPaymentMethod == 'GOPAY' || selectedPaymentMethod == 'SHOPEEPAY')
               const Text('Please complete your payment to process the order'),
           ],
         ),
@@ -825,6 +1196,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
       ),
     );
   }
+  
+}
+
+class JavascriptMode {
+  static var unrestricted;
+}
+
+WebView({required String initialUrl, required javascriptMode, required NavigationDecision Function(NavigationRequest request) navigationDelegate}) {
 }
 
 class AddressData {

@@ -120,7 +120,6 @@ class _FilterCategoryPageState extends State<FilterCategoryPage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 375;
     final crossAxisCount = screenWidth < 600 ? 2 : 4;
-    final cardWidth = (screenWidth - 32 - ((crossAxisCount - 1) * 16)) / crossAxisCount;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -209,10 +208,10 @@ class _FilterCategoryPageState extends State<FilterCategoryPage> {
                             crossAxisCount: crossAxisCount,
                             crossAxisSpacing: 16,
                             mainAxisSpacing: 16,
-                            childAspectRatio: 0.7, // Fixed aspect ratio for consistent cards
+                            childAspectRatio: 0.7,
                           ),
                           itemBuilder: (context, index) {
-                            return _buildProductCard(_filteredProducts[index], isSmallScreen, cardWidth);
+                            return _buildProductCard(_filteredProducts[index], isSmallScreen);
                           },
                         ),
                       ),
@@ -243,7 +242,7 @@ class _FilterCategoryPageState extends State<FilterCategoryPage> {
     );
   }
 
-  Widget _buildProductCard(Map<String, dynamic> product, bool isSmallScreen, double cardWidth) {
+  Widget _buildProductCard(Map<String, dynamic> product, bool isSmallScreen) {
     final String? photoPath = product['photos'];
     final imageUrl = (photoPath != null && photoPath.isNotEmpty)
         ? _supabase.storage.from('picture-products').getPublicUrl(photoPath)
@@ -253,72 +252,70 @@ class _FilterCategoryPageState extends State<FilterCategoryPage> {
     final formattedSold = _formatSoldCount(soldCount is int ? soldCount : int.tryParse(soldCount.toString()) ?? 0);
     final hasDiscount = product['price_ori'] != null && product['price_ori'] > product['price_display'];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Card(
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          margin: EdgeInsets.zero,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ProductDetailPage(
-                    productId: product['id'].toString(),
-                  ),
-                ),
-              );
-            },
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Image section with fixed aspect ratio
-                AspectRatio(
-                  aspectRatio: 1,
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                    child: imageUrl != null
-                        ? Image.network(
-                            imageUrl,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return Center(
-                                child: CircularProgressIndicator(
-                                  color: const Color(0xFFF273F0),
-                                  value: loadingProgress.expectedTotalBytes != null
-                                      ? loadingProgress.cumulativeBytesLoaded /
-                                          loadingProgress.expectedTotalBytes!
-                                      : null,
-                                ),
-                              );
-                            },
-                            errorBuilder: (context, error, stackTrace) =>
-                                Container(
-                                  color: Colors.grey[200],
-                                  child: const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
-                                ),
-                          )
-                        : Container(
-                            color: Colors.grey[200],
-                            child: const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias, // Ensure nothing overflows the card
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProductDetailPage(
+                productId: product['id'].toString(),
+              ),
+            ),
+          );
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image container with fixed aspect ratio
+            Container(
+              height: 150, // Fixed height for image
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: imageUrl != null
+                  ? Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Center(
+                          child: CircularProgressIndicator(
+                            color: const Color(0xFFF273F0),
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                    loadingProgress.expectedTotalBytes!
+                                : null,
                           ),
-                  ),
-                ),
-                // Content section that expands based on text content
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
+                    )
+                  : const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
+            ),
+            // Content section with flexible height but constrained
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Product name with max lines and overflow handling
+                        SizedBox(
+                          height: isSmallScreen ? 36 : 40, // Fixed height for name
+                          child: Text(
                             product['name']?.toString() ?? 'No Name',
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -327,54 +324,55 @@ class _FilterCategoryPageState extends State<FilterCategoryPage> {
                               fontSize: isSmallScreen ? 12 : 14,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          if (hasDiscount)
-                            Text(
-                              'Rp ${_formatPrice(product['price_ori'])}',
-                              style: TextStyle(
-                                fontSize: isSmallScreen ? 10 : 12,
-                                decoration: TextDecoration.lineThrough,
-                                color: Colors.grey[600],
-                              ),
-                            ),
+                        ),
+                        const SizedBox(height: 4),
+                        // Price section
+                        if (hasDiscount)
                           Text(
-                            'Rp ${_formatPrice(product['price_display'] ?? 0)}',
-                            style: TextStyle(
-                              fontSize: isSmallScreen ? 12 : 14,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFFF273F0),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: const [
-                              Icon(Icons.local_shipping, size: 14, color: Colors.grey),
-                              SizedBox(width: 4),
-                              Icon(Icons.credit_card, size: 14, color: Colors.grey),
-                            ],
-                          ),
-                          Text(
-                            '$formattedSold terjual',
+                            'Rp ${_formatPrice(product['price_ori'])}',
                             style: TextStyle(
                               fontSize: isSmallScreen ? 10 : 12,
+                              decoration: TextDecoration.lineThrough,
                               color: Colors.grey[600],
                             ),
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
+                        Text(
+                          'Rp ${_formatPrice(product['price_display'] ?? 0)}',
+                          style: TextStyle(
+                            fontSize: isSmallScreen ? 12 : 14,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFFF273F0),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Bottom row with shipping icons and sold count
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.local_shipping, size: 14, color: Colors.grey),
+                            SizedBox(width: 4),
+                            Icon(Icons.credit_card, size: 14, color: Colors.grey),
+                          ],
+                        ),
+                        Text(
+                          '$formattedSold terjual',
+                          style: TextStyle(
+                            fontSize: isSmallScreen ? 10 : 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 
