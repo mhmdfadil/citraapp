@@ -299,6 +299,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
           });
 
           await _updateProductInventory(item);
+
+          await _removeFromCart(item, userId);
         }
 
         // Create payment record
