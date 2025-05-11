@@ -318,7 +318,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         if (selectedPaymentMethod == 'COD') {
           await supabase
               .from('orders')
-              .update({'status': 'pending'})
+              .update({'status': ''})
               .eq('id', orderId);
               
           _showOrderSuccess(context, orderNumber);

@@ -4,11 +4,12 @@ import 'package:app_links/app_links.dart';
 import 'screens/user_screen.dart';
 import 'package:citraapp/screens/content/product_detail_page.dart';
 import '/utils/supabase_init.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseInit.initialize();
-  
+  await Permission.storage.request();
   String initialRoute = await _getInitialRoute() ?? '/';
   
   runApp(MyApp(initialRoute: initialRoute));

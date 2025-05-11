@@ -1,7 +1,9 @@
+import 'package:citraapp/screens/content/invoice.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '/screens/widget/appbar_b.dart';
+import 'package:intl/intl.dart';
 
 class PaymentContent extends StatefulWidget {
   final String? searchQuery;
@@ -24,8 +26,8 @@ class _PaymentContentState extends State<PaymentContent> {
   String? currentSearchQuery;
 
   // Status sesuai dengan yang ada di tabel orders dan payments
-  final List<String> orderStatuses = ['pending', 'paid', 'processing', 'shipped', 'delivered', 'cancelled'];
-  final List<String> paymentStatuses = ['pending', 'paid', 'deny', 'expire'];
+  final List<String> orderStatuses = ['pending', 'processed', 'shipped', 'delivered', 'cancelled', 'completed'];
+  final List<String> paymentStatuses = ['pending', 'paid', 'denied', 'expired'];
 
   @override
   void initState() {
@@ -124,7 +126,7 @@ class _PaymentContentState extends State<PaymentContent> {
   String _formatDate(String? dateString) {
     if (dateString == null) return '-';
     try {
-      final date = DateTime.parse(dateString);
+      final date = DateTime.parse(dateString).add(Duration(hours: 7)); // Tambah 7 jam untuk WIB
       return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
     } catch (e) {
       return dateString;
@@ -138,10 +140,10 @@ class _PaymentContentState extends State<PaymentContent> {
         return Colors.green;
       case 'pending':
         return Colors.orange;
-      case 'deny':
+      case 'denied':
       case 'cancelled':
         return Colors.red;
-      case 'expire':
+      case 'expired':
         return Colors.grey;
       case 'processing':
       case 'shipped':
@@ -153,7 +155,7 @@ class _PaymentContentState extends State<PaymentContent> {
 
   String _getPaymentMethod(Map<String, dynamic> order) {
     if (order['payments'] != null && order['payments'].isNotEmpty) {
-      return order['payments'][0]['method'] ?? order['payment_method'] ?? 'Unknown';
+      return order['payment_method']?.toString().toUpperCase() ?? order['payment_method'] ?? 'Unknown';
     }
     return order['payment_method'] ?? 'Unknown';
   }
@@ -164,7 +166,7 @@ class _PaymentContentState extends State<PaymentContent> {
     final serviceFee = order['service_fee'] ?? 0;
     final discount = order['discount'] ?? 0;
     
-    return (total + shipping + serviceFee - discount).toDouble();
+    return (total).toDouble();
   }
 
   @override
@@ -339,18 +341,40 @@ class _PaymentContentState extends State<PaymentContent> {
                                             ),
                                           ),
                                           if (payment != null)
-                                            TextButton(
-                                              onPressed: () {
-                                                // TODO: Implement detail view
-                                              },
-                                              child: Text(
-                                                'Detail Pembayaran',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.deepPurple,
+                                           Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                IconButton(
+  icon: Icon(Icons.download_outlined, color: Colors.deepPurple),
+  onPressed: () {
+    final orderId = order['id']?.toString() ?? '';
+     print('Order ID yang akan dikirim: $orderId'); // Debug pri
+    if (orderId.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => InvoicePage(
+            orderId: orderId,
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal mendapatkan ID pesanan')),
+      );
+    }
+  },
+  tooltip: 'Unduh Invoice',
+),
+                                                IconButton(
+                                                  icon: Icon(Icons.remove_red_eye_outlined, color: Colors.deepPurple),
+                                                  onPressed: () {
+                                                    // Detail functionality
+                                                  },
+                                                  tooltip: 'Detail Pembayaran',
                                                 ),
-                                              ),
-                                            ),
+                                              ],
+                                            )
                                         ],
                                       ),
                                     ],

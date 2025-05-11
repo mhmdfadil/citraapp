@@ -344,7 +344,7 @@ class _COBuyPageState extends State<COBuyPage> {
         if (selectedPaymentMethod == 'COD') {
           await supabase
               .from('orders')
-              .update({'status': 'pending'})
+              .update({'status': ''})
               .eq('id', orderId);
               
           _showOrderSuccess(context, orderNumber);
