@@ -51,6 +51,9 @@ dependencies:
   app_links: ^6.4.0
   url_launcher: ^6.1.0
   qr_flutter: ^4.1.0
+  shimmer: ^3.0.0
+  lottie: ^3.3.1
+  google_fonts: ^6.2.1
   
 dev_dependencies:
   flutter_test:
@@ -79,6 +82,8 @@ flutter:
     - assets/images/war3.png
     - assets/images/war4.png
     - assets/images/mitra_citra.png
+    - assets/animations/success.json
+    - assets/animations/confetti.json
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

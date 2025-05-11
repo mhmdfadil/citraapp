@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:intl/intl.dart';
 import '/screens/content/cart_screen.dart';
 import '/screens/content/address_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,6 +12,8 @@ import 'package:webview_flutter/webview_flutter.dart'; // Untuk menampilkan Snap
 import '/utils/midtrans_service.dart'; // Import service Midtrans
 import 'package:url_launcher/url_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:lottie/lottie.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class CheckoutPage extends StatefulWidget {
   final List<CartItem> cartItems;
@@ -35,8 +38,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
   String? selectedPaymentMethod;
   List<String> availablePaymentMethods = [];
   final supabase = Supabase.instance.client;
-  bool isLoadingPaymentMethods = true;
+   bool isLoadingPaymentMethods = true;
   bool isProcessingOrder = false;
+  String? currentOrderNumber;
+  bool isPaymentCompleted = false;
+  RealtimeSubscription? paymentStatusSubscription;
 
   @override
   void initState() {
@@ -47,7 +53,95 @@ class _CheckoutPageState extends State<CheckoutPage> {
     _loadPaymentMethods();
   }
 
-  Future<void> _loadPaymentMethods() async {
+   @override
+  void dispose() {
+    paymentStatusSubscription?.unsubscribe().catchError((e) {});
+    super.dispose();
+  }
+
+  Future<void> _setupPaymentStatusListener(String orderNumber) async {
+  try {
+    // Get order ID first
+    final orderResponse = await supabase
+        .from('orders')
+        .select('id')
+        .eq('order_number', orderNumber)
+        .single();
+
+    if (orderResponse != null) {
+      final orderId = orderResponse['id'] as int;
+
+      // Immediately check current payment status
+      await _checkPaymentStatus(orderId, orderNumber);
+
+      // Setup realtime subscription with proper filtering
+      paymentStatusSubscription = supabase
+          .from('payments')
+          .on(SupabaseEventTypes.update, (payload) {
+        debugPrint('Payment update received: ${payload.newRecord}');
+        // Only process if it's our order's payment
+        if (payload.newRecord['order_id'] == orderId && 
+            payload.newRecord['status'] == 'paid') {
+          if (mounted) {
+            setState(() {
+              isPaymentCompleted = true;
+            });
+            _showPaymentSuccess(context, orderNumber);
+          }
+        }
+      }).subscribe();
+    }
+  } catch (e) {
+    debugPrint('Error setting up payment listener: $e');
+    // Retry after 1 second if failed
+    await Future.delayed(Duration(seconds: 1));
+    if (mounted) {
+      _setupPaymentStatusListener(orderNumber);
+    }
+  }
+}
+
+ Future<void> _checkPaymentStatus(int orderId, String orderNumber) async {
+  try {
+    // Add a small delay to ensure Supabase has time to update
+    await Future.delayed(Duration(seconds: 1));
+    
+    final paymentResponse = await supabase
+        .from('payments')
+        .select('status, midtrans_response')
+        .eq('order_id', orderId)
+        .maybeSingle();
+
+    if (paymentResponse != null) {
+      debugPrint('Current payment status: ${paymentResponse['status']}');
+      debugPrint('Midtrans response: ${paymentResponse['midtrans_response']}');
+      
+      if (paymentResponse['status'] == 'paid') {
+        if (mounted) {
+          setState(() {
+            isPaymentCompleted = true;
+          });
+          _showPaymentSuccess(context, orderNumber);
+        }
+      } else {
+        // If not paid yet, check again after 1 second
+        await Future.delayed(Duration(seconds: 1));
+        if (mounted) {
+          _checkPaymentStatus(orderId, orderNumber);
+        }
+      }
+    }
+  } catch (e) {
+    debugPrint('Error checking payment status: $e');
+    // Retry after 1 second if failed
+    await Future.delayed(Duration(seconds: 1));
+    if (mounted) {
+      _checkPaymentStatus(orderId, orderNumber);
+    }
+  }
+}
+
+ Future<void> _loadPaymentMethods() async {
     try {
       if (widget.cartItems.isEmpty) {
         setState(() => isLoadingPaymentMethods = false);
@@ -74,7 +168,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
       List<String> paymentMethods = [];
 
-      // Handle all possible data formats
       if (paymentData is String) {
         try {
           final decoded = jsonDecode(paymentData);
@@ -175,6 +268,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
       // Generate order number
       final orderNumber = 'ORD-${DateTime.now().millisecondsSinceEpoch}';
+      currentOrderNumber = orderNumber;
 
       // Create order in database
       final orderResponse = await supabase
@@ -186,7 +280,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
             'shipping_cost': shippingCost,
             'service_fee': 5000,
             'discount': 40000,
-            'status': 'pending',
             'payment_method': selectedPaymentMethod,
             'address_id': selectedAddress!.id,
           })
@@ -205,11 +298,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
             'price': double.tryParse(item.price) ?? 0,
           });
 
-          // Update product stock and sold count
           await _updateProductInventory(item);
-          
-          // Remove item from cart
-          await _removeFromCart(item, userId);
         }
 
         // Create payment record
@@ -220,17 +309,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
           'amount': finalTotal,
         });
 
+        // Setup payment status listener
+        _setupPaymentStatusListener(orderNumber);
+
         // Handle payment based on method
         if (selectedPaymentMethod == 'COD') {
-          // For COD, just update status to pending
           await supabase
               .from('orders')
               .update({'status': 'pending'})
               .eq('id', orderId);
               
           _showOrderSuccess(context, orderNumber);
-        } else if (selectedPaymentMethod == 'BSI' || selectedPaymentMethod == 'DANA' || selectedPaymentMethod == 'GOPAY' || selectedPaymentMethod == 'SHOPEEPAY') {
-          // For online payments, process with Midtrans
+        } else if (selectedPaymentMethod == 'BSI' || 
+                  selectedPaymentMethod == 'DANA' || 
+                  selectedPaymentMethod == 'GOPAY' || 
+                  selectedPaymentMethod == 'SHOPEEPAY') {
           await _processMidtransPayment(orderNumber, finalTotal);
         }
       }
@@ -244,27 +337,46 @@ class _CheckoutPageState extends State<CheckoutPage> {
     }
   }
 
-// Fungsi untuk memproses pembayaran
-Future<void> _processMidtransPayment(String orderId, double amount) async {
+  Future<void> _processMidtransPayment(String orderNumber, double amount) async {
   try {
     final response = await MidtransService.createTransaction(
-      orderId: orderId,
+      orderId: orderNumber,
       grossAmount: amount,
       paymentMethod: selectedPaymentMethod,
     );
 
+    // Get order ID to update payment record
+    final orderResponse = await supabase
+        .from('orders')
+        .select('id')
+        .eq('order_number', orderNumber)
+        .single();
+
+    if (orderResponse != null) {
+      final orderId = orderResponse['id'] as int;
+      
+      // Update payment record with Midtrans response
+      await supabase
+          .from('payments')
+          .update({
+            'midtrans_response': response,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('order_id', orderId);
+    }
+
     if (selectedPaymentMethod == 'BSI') {
       final vaNumber = response['va_numbers'][0]['va_number'];
-      _showBankTransferInstructions(context, vaNumber, orderId);
+      _showBankTransferInstructions(context, vaNumber, orderNumber);
     } else if (selectedPaymentMethod == 'SHOPEEPAY') {
-      final deeplinkUrl = response['actions'][0]['url']; // URL deeplink-redirect
-      _showEWalletInstructions(context, 'ShopeePay', deeplinkUrl, orderId);
+      final deeplinkUrl = response['actions'][0]['url'];
+      _showEWalletInstructions(context, 'ShopeePay', deeplinkUrl, orderNumber);
     } else if (selectedPaymentMethod == 'GOPAY') {
-      final deeplinkUrl = response['actions'][1]['url']; // URL deeplink-redirect
-      _showEWalletInstructions(context, 'GoPay', deeplinkUrl, orderId);
+      final deeplinkUrl = response['actions'][1]['url'];
+      _showEWalletInstructions(context, 'GoPay', deeplinkUrl, orderNumber);
     } else if (selectedPaymentMethod == 'DANA') {
       final redirectUrl = response['actions'][0]['url'];
-      _showMidtransSnap(redirectUrl, orderId);
+      _showMidtransSnap(redirectUrl, orderNumber);
     }
   } catch (e) {
     debugPrint('Error processing payment: $e');
@@ -273,302 +385,579 @@ Future<void> _processMidtransPayment(String orderId, double amount) async {
     );
   }
 }
-
-// Tampilan instruksi pembayaran e-wallet dengan QR code dari deeplink
-void _showEWalletInstructions(BuildContext context, String walletName, String deeplinkUrl, String orderNumber) {
-  final isShopeePay = walletName == 'ShopeePay';
-  
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Container(
-        padding: EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: isShopeePay ? Colors.orange : Colors.blue,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.wallet, color: Colors.white),
-            SizedBox(width: 10),
-            Text(walletName, style: TextStyle(color: Colors.white)),
-          ],
-        ),
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildStoreInfoCard(orderNumber),
-            SizedBox(height: 20),
-            
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+  void _showEWalletInstructions(BuildContext context, String walletName, String deeplinkUrl, String orderNumber) {
+    final isShopeePay = walletName == 'ShopeePay';
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isShopeePay ? Colors.orange : Colors.blue,
+                borderRadius: BorderRadius.circular(8),
               ),
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Text('QR Code Pembayaran $walletName', 
-                         style: TextStyle(fontSize: 16)),
-                    SizedBox(height: 16),
-                    Container(
-                      padding: EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(8),
+              child: Row(
+                children: [
+                  Icon(Icons.wallet, color: Colors.white),
+                  SizedBox(width: 10),
+                  Text(walletName, style: TextStyle(color: Colors.white)),
+                ],
+              ),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildStoreInfoCard(orderNumber),
+                  SizedBox(height: 20),
+                  
+                  if (isPaymentCompleted)
+                    _buildPaymentSuccessContent()
+                  else
+                    Card(
+                      elevation: 3,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: _buildQRCodeWidget(deeplinkUrl), // Widget QR code dari deeplink
-                    ),
-                    SizedBox(height: 16),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isShopeePay ? Colors.orange : Colors.blue,
-                      ),
-                     onPressed: () async {
-                        try {
-                          // Langsung buka URL Midtrans di browser
-                          await launch(
-                            deeplinkUrl,
-                            forceSafariVC: false, // Buka di browser eksternal
-                            universalLinksOnly: false,
-                          );
-                        } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Gagal membuka halaman pembayaran'),
-                              duration: Duration(seconds: 3),
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            Text('QR Code Pembayaran $walletName', 
+                                 style: TextStyle(fontSize: 16)),
+                            SizedBox(height: 16),
+                            Container(
+                              padding: EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: _buildQRCodeWidget(deeplinkUrl),
                             ),
-                          );
-                        }
-                      },
-                      child: Text('Buka di $walletName', 
-                          style: TextStyle(color: Colors.white)),
-                    ),
-                    SizedBox(height: 16),
-                    Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
-                    SizedBox(height: 8),
-                    Text(
-                      'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
-                        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                        (Match m) => '${m[1]}.',
-                      )}',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green[800],
+                            SizedBox(height: 16),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isShopeePay ? Colors.orange : Colors.blue,
+                              ),
+                              onPressed: () async {
+                                try {
+                                  await launch(
+                                    deeplinkUrl,
+                                    forceSafariVC: false,
+                                    universalLinksOnly: false,
+                                  );
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Gagal membuka halaman pembayaran'),
+                                      duration: Duration(seconds: 3),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: Text('Buka di $walletName', 
+                                  style: TextStyle(color: Colors.white)),
+                            ),
+                            SizedBox(height: 16),
+                            Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
+                            SizedBox(height: 8),
+                            Text(
+                              'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
+                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                                (Match m) => '${m[1]}.',
+                              )}',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[800],
+                              ),
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'Scan QR code untuk membayar via $walletName',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    SizedBox(height: 16),
-                    Text(
-                      'Scan QR code untuk membayar via $walletName',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Tutup'),
-        ),
-        // ElevatedButton(
-        //   style: ElevatedButton.styleFrom(
-        //     backgroundColor: isShopeePay ? Colors.orange : Colors.blue,
-        //   ),
-        //   onPressed: () {
-        //     Navigator.of(context).pop();
-        //     _showOrderSuccess(context, orderNumber);
-        //   },
-        //   child: Text('Saya Sudah Bayar', 
-        //       style: TextStyle(color: Colors.white)),
-        // ),
-      ],
-    ),
-  );
-}
-
-// Widget untuk menampilkan QR code dari URL
-Widget _buildQRCodeWidget(String deeplinkUrl) {
-  // Menggunakan package qr_flutter untuk generate QR code
-  return SizedBox(
-    width: 200,
-    height: 200,
-    child: QrImageView(
-      data: deeplinkUrl,
-      version: QrVersions.auto,
-      size: 200,
-      gapless: false,
-      embeddedImageStyle: QrEmbeddedImageStyle(
-        size: Size(40, 40),
-      ),
-    ),
-  );
-}
-
-void _showBankTransferInstructions(BuildContext context, String vaNumber, String orderNumber) {
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      title: Container(
-        padding: EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.blue[800],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.account_balance, color: Colors.white),
-            SizedBox(width: 10),
-            Text('BSI Virtual Account', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Store Information
-            _buildStoreInfoCard(orderNumber),
-            SizedBox(height: 20),
-            
-            // Payment Info
-            Card(
-              elevation: 3,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Text('Nomor Virtual Account', style: TextStyle(fontSize: 16)),
-                    SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          vaNumber,
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue[800],
-                          ),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.copy, color: Colors.blue),
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: vaNumber));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Nomor VA berhasil disalin!')),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    Divider(),
-                    SizedBox(height: 8),
-                    Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
-                    SizedBox(height: 8),
-                    Text(
-                      'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
-                        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                        (Match m) => '${m[1]}.',
-                      )}',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green[800],
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    Text(
-                      'Pembayaran akan diproses otomatis setelah transfer',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+            actions: [
+              if (!isPaymentCompleted)
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Tutup'),
                 ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Tutup', style: TextStyle(color: Colors.blue[800])),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue[800],
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          onPressed: () {
-            Navigator.of(context).pop();
-            _showOrderSuccess(context, orderNumber);
-          },
-          child: Text('Saya Sudah Bayar', style: TextStyle(color: Colors.white)),
-        ),
-      ],
-    ),
-  );
-}
-
-
-Widget _buildStoreInfoCard(String orderNumber) {
-  return Card(
-    elevation: 2,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-      side: BorderSide(color: Colors.grey[300]!),
-    ),
-    child: Padding(
-      padding: EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.store, color: Colors.blue[800], size: 20),
-              SizedBox(width: 8),
-              Text(
-                'Toko Citra Cosmetic',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue[800],
-                ),
-              ),
             ],
+          );
+        }
+      ),
+    );
+  }
+
+  Widget _buildQRCodeWidget(String deeplinkUrl) {
+    return SizedBox(
+      width: 200,
+      height: 200,
+      child: QrImageView(
+        data: deeplinkUrl,
+        version: QrVersions.auto,
+        size: 200,
+        gapless: false,
+        embeddedImageStyle: QrEmbeddedImageStyle(
+          size: Size(40, 40),
+        ),
+      ),
+    );
+  }
+
+  void _showBankTransferInstructions(BuildContext context, String vaNumber, String orderNumber) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue[800],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.account_balance, color: Colors.white),
+                  SizedBox(width: 10),
+                  Text('BSI Virtual Account', style: TextStyle(color: Colors.white)),
+                ],
+              ),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildStoreInfoCard(orderNumber),
+                  SizedBox(height: 20),
+                  
+                  if (isPaymentCompleted)
+                    _buildPaymentSuccessContent()
+                  else
+                    Card(
+                      elevation: 3,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Column(
+                          children: [
+                            Text('Nomor Virtual Account', style: TextStyle(fontSize: 16)),
+                            SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  vaNumber,
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue[800],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.copy, color: Colors.blue),
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: vaNumber));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Nomor VA berhasil disalin!')),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                            Divider(),
+                            SizedBox(height: 8),
+                            Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
+                            SizedBox(height: 8),
+                            Text(
+                              'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
+                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                                (Match m) => '${m[1]}.',
+                              )}',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[800],
+                              ),
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'Pembayaran akan diproses otomatis setelah transfer',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              if (!isPaymentCompleted)
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Tutup', style: TextStyle(color: Colors.blue[800])),
+                ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+
+  Widget _buildStoreInfoCard(String orderNumber) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey[300]!),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.store, color: Colors.blue[800], size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Toko Citra Cosmetic',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue[800],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Jl. Muara Duara, Kota Lhokseumawe',
+              style: TextStyle(fontSize: 14),
+            ),
+            Text(
+              'Aceh Utara',
+              style: TextStyle(fontSize: 14),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'No. Pesanan: ${orderNumber}',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMidtransSnap(String redirectUrl, String orderNumber) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            title: const Text('Complete Payment'),
+            leading: IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                Navigator.pop(context);
+                _showOrderSuccess(context, orderNumber);
+              },
+            ),
           ),
-          SizedBox(height: 8),
-          Text(
-            'Jl. Muara Duara, Kota Lhokseumawe',
-            style: TextStyle(fontSize: 14),
+          body: WebView(
+            initialUrl: redirectUrl,
+            javascriptMode: JavascriptMode.unrestricted,
+            navigationDelegate: (NavigationRequest request) {
+              if (request.url.contains('/status/') || 
+                  request.url.contains('status_code=200')) {
+                Navigator.pop(context);
+                _showPaymentSuccessDialog(context, orderNumber);
+                return NavigationDecision.prevent;
+              }
+              return NavigationDecision.navigate;
+            },
           ),
-          Text(
-            'Aceh Utara',
-            style: TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+  }
+
+Widget _buildPaymentSuccessContent() {
+  return SingleChildScrollView(
+    physics: ClampingScrollPhysics(),
+    child: Container(
+      padding: EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Floating Confetti Animation Background
+          Container(
+            height: 200,
+            width: double.infinity,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(
+                  child: Lottie.asset(
+                    'assets/animations/confetti.json',
+                    fit: BoxFit.cover,
+                    repeat: false,
+                  ),
+                ),
+                // Animated Checkmark with Glow Effect
+                Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.purple.withOpacity(0.3),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: Lottie.asset(
+                    'assets/animations/success.json',
+                    width: 120,
+                    height: 120,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ],
+            ),
           ),
-          SizedBox(height: 8),
+          
+          SizedBox(height: 16),
+          
+          // Payment Success Title with Fade Animation
+          AnimatedOpacity(
+            opacity: 1,
+            duration: Duration(milliseconds: 800),
+            child: Text(
+              'Pembayaran Berhasil!',
+              style: GoogleFonts.poppins(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF6A1B9A),
+                letterSpacing: 0.5,
+                height: 1.3,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          
+          // Payment Success Subtitle
+          AnimatedOpacity(
+            opacity: 1,
+            duration: Duration(milliseconds: 800),
+
+            child: Container(
+              margin: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: Text(
+                'Transaksi Anda telah berhasil diproses. Terima kasih telah berbelanja di Toko Citra Cosmetic',
+                style: GoogleFonts.poppins(
+                  fontSize: 15,
+                  color: Colors.grey[700],
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+          
+          // Elegant Amount Card
+          AnimatedContainer(
+            duration: Duration(milliseconds: 500),
+            curve: Curves.easeOutQuart,
+            margin: EdgeInsets.symmetric(vertical: 16),
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFF3E5F5), Color(0xFFE1BEE7)],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.purple.withOpacity(0.2),
+                  blurRadius: 15,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Text(
+                  'Total Pembayaran',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    color: Colors.purple[800],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
+                    RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                    (Match m) => '${m[1]}.',
+                  )}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF4A148C),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Store Information Card (Modern Neumorphic Design)
+          Container(
+            width: double.infinity,
+            margin: EdgeInsets.symmetric(vertical: 16),
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: Offset(5, 5),
+                ),
+                BoxShadow(
+                  color: Colors.white,
+                  blurRadius: 20,
+                  offset: Offset(-5, -5),
+                ),
+              ],
+              border: Border.all(
+                color: Colors.grey.withOpacity(0.1),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                // Store Icon and Name
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.store_mall_directory_rounded,
+                      color: Colors.purple[700],
+                      size: 24,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Toko Citra Cosmetic',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.purple[800],
+                      ),
+                    ),
+                  ],
+                ),
+                
+                SizedBox(height: 12),
+                
+                // Store Address
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.location_on_outlined,
+                      color: Colors.grey[600],
+                      size: 18,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Jln. Muara Dua, Kota Lhokseumawe, Aceh Utara',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: Colors.grey[700],
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                
+                SizedBox(height: 8),
+                
+                // Transaction Time
+                Row(
+                  children: [
+                    Icon(
+                      Icons.access_time_outlined,
+                      color: Colors.grey[600],
+                      size: 18,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      '${DateFormat('dd MMM yyyy, HH:mm').format(DateTime.now())} WIB',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          
+          // Decorative Divider
+          Container(
+            margin: EdgeInsets.symmetric(vertical: 24),
+            height: 4,
+            width: 80,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(2),
+              gradient: LinearGradient(
+                colors: [Colors.purple[300]!, Colors.pink[200]!],
+              ),
+            ),
+          ),
+          
+          // Thank You Message
           Text(
-            'No. Pesanan: ${orderNumber}',
-            style: TextStyle(
+            'Terima kasih telah mempercayai kami',
+            style: GoogleFonts.poppins(
               fontSize: 14,
               color: Colors.grey[600],
+              fontStyle: FontStyle.italic,
             ),
           ),
         ],
@@ -577,38 +966,249 @@ Widget _buildStoreInfoCard(String orderNumber) {
   );
 }
 
-void _showMidtransSnap(String redirectUrl, String orderNumber) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Complete Payment'),
-          leading: IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () {
-              Navigator.pop(context);
-              _showOrderSuccess(context, orderNumber);
-            },
+void _showPaymentSuccessDialog(BuildContext context, String orderNumber) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: EdgeInsets.all(20),
+      child: Stack(
+        children: [
+          // Confetti background animation
+          Positioned.fill(
+            child: Lottie.asset(
+              'assets/animations/confetti.json',
+              fit: BoxFit.cover,
+              repeat: false,
+            ),
           ),
-        ),
-        body: WebView(
-          initialUrl: redirectUrl,
-          javascriptMode: JavascriptMode.unrestricted,
-          navigationDelegate: (NavigationRequest request) {
-            if (request.url.contains('/status/') || 
-                request.url.contains('status_code=200')) {
-              Navigator.pop(context);
-              _showOrderSuccess(context, orderNumber);
-              return NavigationDecision.prevent;
-            }
-            return NavigationDecision.navigate;
-          },
-        ),
+          
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.white, Colors.white, Color(0xFFF5F9FF)],
+              ),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 30,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(30),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Lottie Checkmark Animation
+                  Container(
+                    width: 150,
+                    height: 150,
+                    child: Lottie.asset(
+                      'assets/animations/success.json',
+                      fit: BoxFit.contain,
+                      repeat: false,
+                    ),
+                  ),
+                  
+                  SizedBox(height: 20),
+                  
+                  // Success Title with fade animation
+                  AnimatedOpacity(
+                    opacity: 1,
+                    duration: Duration(milliseconds: 500),
+                    child: Text(
+                      'Pembayaran Berhasil!',
+                      style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green[800],
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  
+                  SizedBox(height: 12),
+                  
+                  // Order Number
+                  Text(
+                    'Nomor Pesanan: #$orderNumber',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  
+                  SizedBox(height: 25),
+                  
+                  // Payment Amount with animated container
+                  AnimatedContainer(
+                    duration: Duration(milliseconds: 500),
+                    curve: Curves.easeInOut,
+                    padding: EdgeInsets.symmetric(vertical: 15, horizontal: 25),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF4CAF50), Color(0xFF8BC34A)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(15),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.green.withOpacity(0.3),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                          offset: Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
+                        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                        (Match m) => '${m[1]}.',
+                      )}',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                  
+                  SizedBox(height: 30),
+                  
+                  // Store Info with divider
+                  Column(
+                    children: [
+                      Divider(
+                        color: Colors.grey[300],
+                        thickness: 1,
+                        indent: 20,
+                        endIndent: 20,
+                      ),
+                      SizedBox(height: 15),
+                      Text(
+                        'Terima kasih telah berbelanja di',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Citra Cosmetic',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.deepPurple,
+                        ),
+                      ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Jln Muara Dua, Kota Lhokseumawe, Aceh Utara',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                  
+                  SizedBox(height: 25),
+                  
+                  // Home Button with scale animation
+                  AnimatedScale(
+                    scale: 1,
+                    duration: Duration(milliseconds: 300),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          elevation: 5,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          shadowColor: Colors.green.withOpacity(0.4),
+                        ),
+                        onPressed: () {
+                          Navigator.popUntil(context, (route) => route.isFirst);
+                        },
+                        child: Text(
+                          'Kembali ke Beranda',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     ),
   );
 }
+
+ void _showPaymentSuccess(BuildContext context, String orderNumber) {
+  // Close any existing dialogs
+  Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+  
+  // Show success dialog
+  _showPaymentSuccessDialog(context, orderNumber);
+}
+
+  void _showOrderSuccess(BuildContext context, String orderNumber) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Order Created'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Lottie.asset(
+              'assets/animations/success.json',
+              width: 100,
+              height: 100,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(height: 16),
+            Text('Your order #$orderNumber has been created successfully'),
+            const SizedBox(height: 16),
+            if (selectedPaymentMethod == 'COD')
+              const Text('Your order will be processed soon'),
+            if (selectedPaymentMethod == 'BSI' || selectedPaymentMethod == 'DANA' || selectedPaymentMethod == 'GOPAY' || selectedPaymentMethod == 'SHOPEEPAY')
+              const Text('Please complete your payment to process the order'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).popUntil((route) => route.isFirst);
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   Future<void> _updateProductInventory(CartItem item) async {
     try {
@@ -680,36 +1280,6 @@ void _showMidtransSnap(String redirectUrl, String orderNumber) {
             onPressed: () {
               Navigator.of(context).pop();
               _showOrderSuccess(context, orderNumber);
-            },
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showOrderSuccess(BuildContext context, String orderNumber) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Order Created'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.check_circle, color: Colors.green, size: 60),
-            const SizedBox(height: 16),
-            Text('Your order #$orderNumber has been created successfully'),
-            const SizedBox(height: 16),
-            if (selectedPaymentMethod == 'COD')
-              const Text('Your order will be processed soon'),
-            if (selectedPaymentMethod == 'BSI' || selectedPaymentMethod == 'DANA' || selectedPaymentMethod == 'GOPAY' || selectedPaymentMethod == 'SHOPEEPAY')
-              const Text('Please complete your payment to process the order'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).popUntil((route) => route.isFirst);
             },
             child: const Text('OK'),
           ),
@@ -1197,6 +1767,14 @@ void _showMidtransSnap(String redirectUrl, String orderNumber) {
     );
   }
   
+}
+
+extension on SupabaseQueryBuilder {
+  on(SupabaseEventTypes update, Null Function(dynamic payload) param1) {}
+}
+
+class RealtimeSubscription {
+  unsubscribe() {}
 }
 
 class JavascriptMode {

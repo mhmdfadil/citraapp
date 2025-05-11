@@ -90,6 +90,31 @@ class MidtransService {
       throw Exception('Error processing Midtrans payment: $e');
     }
   }
+
+  static Future<Map<String, dynamic>> checkTransactionStatus(String orderId) async {
+  final url = Uri.parse('$_baseUrl/v2/$orderId/status');
+  
+  final auth = 'Basic ${base64Encode(utf8.encode('$_serverKey:'))}';
+  
+  try {
+    final response = await http.get(
+      url,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': auth,
+      },
+    ).timeout(const Duration(seconds: 30));
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } else {
+      throw Exception('Failed to check transaction status. Status: ${response.statusCode}');
+    }
+  } catch (e) {
+    throw Exception('Error checking transaction status: $e');
+  }
+}
   
   static String get midtransScriptUrl => _midtransScriptUrl;
 }
