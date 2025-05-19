@@ -59,6 +59,7 @@ dependencies:
   permission_handler: ^12.0.0+1
   open_file: ^3.5.10
   path_provider: ^2.1.5
+  clipboard: ^0.1.3
   
 dev_dependencies:
   flutter_test:
@@ -79,6 +80,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/images/logo.png
+    - assets/images/logos.png
     - assets/images/background.png
     - assets/images/banner.png
     - assets/images/war1.png
@@ -88,6 +90,7 @@ flutter:
     - assets/images/war4.png
     - assets/images/mitra_citra.png
     - assets/animations/success.json
+    - assets/animations/error_pulse.json
     - assets/animations/confetti.json
 
   # The following line ensures that the Material Icons font is

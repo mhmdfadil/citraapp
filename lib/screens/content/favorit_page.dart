@@ -17,6 +17,7 @@ class _FavoritPageState extends State<FavoritPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _favorites = [];
   List<Map<String, dynamic>> _products = [];
+  Map<String, String?> _productPhotos = {}; // To store product photo URLs
   bool _isLoading = true;
   String? userId;
   String _selectedSort = 'Terbaru';
@@ -64,8 +65,24 @@ class _FavoritPageState extends State<FavoritPage> {
           .select()
           .inFilter('id', favoriteIds);
 
+      // Get photos for these products from photo_items table
+      final photosResponse = await _supabase
+          .from('photo_items')
+          .select('id, name, product_id')
+          .inFilter('product_id', favoriteIds)
+          .order('created_at', ascending: true);
+
+      // Create a map of product_id to first photo
+      final photoMap = <String, String?>{};
+      for (var photo in photosResponse) {
+        if (!photoMap.containsKey(photo['product_id'].toString())) {
+          photoMap[photo['product_id'].toString()] = photo['name'];
+        }
+      }
+
       setState(() {
         _products = List<Map<String, dynamic>>.from(productsResponse);
+        _productPhotos = photoMap;
         _isLoading = false;
       });
     } catch (e) {
@@ -165,8 +182,9 @@ class _FavoritPageState extends State<FavoritPage> {
   }
 
   Widget _buildProductCard(Map<String, dynamic> product, bool isSmallScreen) {
-    final String? photoPath = product['photos'];
-    final imageUrl = (photoPath != null && photoPath.isNotEmpty)
+    // Get photo from our photo map instead of product.photos
+    final photoPath = _productPhotos[product['id'].toString()];
+    final imageUrl = photoPath != null
         ? _supabase.storage.from('picture-products').getPublicUrl(photoPath)
         : null;
 
@@ -215,15 +233,15 @@ class _FavoritPageState extends State<FavoritPage> {
                                 ),
                               );
                             },
-                            errorBuilder: (context, error, stackTrace) =>
-                                Container(
-                                  color: Colors.grey[200],
-                                  child: const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
-                                ),
-                          )
-                        : Container(
-                            color: Colors.grey[200],
-                            child: const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
+                            errorBuilder: (context, error, stackTrace) => 
+                              Image.asset(
+                                'assets/images/placeholder.png',
+                                fit: BoxFit.cover,
+                              ),
+                            )
+                          : Image.asset(
+                              'assets/images/placeholder.png',
+                              fit: BoxFit.cover,
                           ),
                   ),
                 ),

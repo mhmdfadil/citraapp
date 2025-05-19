@@ -33,9 +33,21 @@ class _FilterSearchPageState extends State<FilterSearchPage> {
     setState(() => _isLoading = true);
 
     try {
+      // Main query to get products with first photo from photo_items
       PostgrestFilterBuilder<dynamic> query = _supabase
           .from('products')
-          .select('id, name, photos, price_ori, price_display, sold, desc');
+          .select('''
+            id, 
+            name, 
+            price_ori, 
+            price_display, 
+            sold, 
+            desc,
+            photo_items:photo_items!product_id (
+              id,
+              name
+            ).limit(1).order(created_at, ascending: true)
+          ''');
 
       if (_currentQuery.isNotEmpty) {
         query = query.ilike('name', '%${_currentQuery.toLowerCase()}%');
@@ -284,9 +296,13 @@ class _FilterSearchPageState extends State<FilterSearchPage> {
   }
 
   Widget _buildProductCard(Map<String, dynamic> product, bool isSmallScreen) {
-    final String? photoPath = product['photos'];
-    final imageUrl = (photoPath != null && photoPath.isNotEmpty)
-        ? _supabase.storage.from('picture-products').getPublicUrl(photoPath)
+    // Get the first photo item (if any)
+    final photoItems = product['photo_items'] as List?;
+    final photoItem = photoItems != null && photoItems.isNotEmpty ? photoItems[0] : null;
+    final photoName = photoItem != null ? photoItem['name'] as String? : null;
+    
+    final imageUrl = photoName != null
+        ? _supabase.storage.from('picture-products').getPublicUrl(photoName)
         : null;
 
     final soldCount = product['sold'] ?? 0;
@@ -295,14 +311,14 @@ class _FilterSearchPageState extends State<FilterSearchPage> {
 
     return GestureDetector(
       onTap: () {
-       Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => ProductDetailPage(
-      productId: product['id'].toString(), // Ensure ID is converted to string
-    ),
-  ),
-);
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductDetailPage(
+              productId: product['id'].toString(),
+            ),
+          ),
+        );
       },
       child: Card(
         elevation: 2,
@@ -313,18 +329,21 @@ class _FilterSearchPageState extends State<FilterSearchPage> {
           children: [
             AspectRatio(
               aspectRatio: 1,
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                child: imageUrl != null
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
+                  color: Colors.grey[200],
+                ),
+                child: imageUrl?.isNotEmpty == true
                     ? Image.network(
-                        imageUrl,
+                        imageUrl!,
                         fit: BoxFit.cover,
-                        width: double.infinity,
                         loadingBuilder: (context, child, loadingProgress) {
                           if (loadingProgress == null) return child;
                           return Center(
                             child: CircularProgressIndicator(
-                              color: const Color(0xFFF273F0),
                               value: loadingProgress.expectedTotalBytes != null
                                   ? loadingProgress.cumulativeBytesLoaded /
                                       loadingProgress.expectedTotalBytes!
@@ -332,15 +351,15 @@ class _FilterSearchPageState extends State<FilterSearchPage> {
                             ),
                           );
                         },
-                        errorBuilder: (context, error, stackTrace) =>
-                            Container(
-                              color: Colors.grey[200],
-                              child: const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
+                        errorBuilder: (context, error, stackTrace) => 
+                            Image.asset(
+                              'assets/images/placeholder.png',
+                              fit: BoxFit.cover,
                             ),
                       )
-                    : Container(
-                        color: Colors.grey[200],
-                        child: const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
+                    : Image.asset(
+                        'assets/images/placeholder.png',
+                        fit: BoxFit.cover,
                       ),
               ),
             ),

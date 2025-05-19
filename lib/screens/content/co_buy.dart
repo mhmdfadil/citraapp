@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:citraapp/screens/content/chat.dart';
 import 'package:citraapp/screens/content/cartItem.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -57,6 +59,7 @@ class _COBuyPageState extends State<COBuyPage> {
   @override
   void dispose() {
     paymentStatusSubscription?.unsubscribe().catchError((e) {});
+     paymentTimer?.cancel();
     super.dispose();
   }
 
@@ -278,7 +281,7 @@ class _COBuyPageState extends State<COBuyPage> {
     }
   }
 
-  Future<void> _createOrder() async {
+   Future<void> _createOrder() async {
     if (isProcessingOrder) return;
     
     try {
@@ -310,6 +313,7 @@ class _COBuyPageState extends State<COBuyPage> {
             'discount': 40000,
             'payment_method': selectedPaymentMethod,
             'address_id': selectedAddress!.id,
+            'created_at': DateTime.now().toIso8601String(), // Tambahkan ini
           })
           .select()
           .single();
@@ -335,6 +339,7 @@ class _COBuyPageState extends State<COBuyPage> {
           'method': selectedPaymentMethod,
           'status': 'pending',
           'amount': finalTotal,
+          'created_at': DateTime.now().toIso8601String(), // Tambahkan ini
         });
 
         // Setup payment status listener
@@ -364,8 +369,7 @@ class _COBuyPageState extends State<COBuyPage> {
       setState(() => isProcessingOrder = false);
     }
   }
-
-  Future<void> _processMidtransPayment(String orderNumber, double amount) async {
+   Future<void> _processMidtransPayment(String orderNumber, double amount) async {
   try {
     final response = await MidtransService.createTransaction(
       orderId: orderNumber,
@@ -395,12 +399,42 @@ class _COBuyPageState extends State<COBuyPage> {
 
     if (selectedPaymentMethod == 'BSI') {
       final vaNumber = response['va_numbers'][0]['va_number'];
+      // Update va_number in payments table
+      await supabase
+          .from('payments')
+          .update({'va_number': vaNumber})
+          .eq('order_id', (await supabase
+              .from('orders')
+              .select('id')
+              .eq('order_number', orderNumber)
+              .single())['id']);
+      
       _showBankTransferInstructions(context, vaNumber, orderNumber);
     } else if (selectedPaymentMethod == 'SHOPEEPAY') {
       final deeplinkUrl = response['actions'][0]['url'];
+      // Update link_url in payments table
+      await supabase
+          .from('payments')
+          .update({'link_url': deeplinkUrl})
+          .eq('order_id', (await supabase
+              .from('orders')
+              .select('id')
+              .eq('order_number', orderNumber)
+              .single())['id']);
+      
       _showEWalletInstructions(context, 'ShopeePay', deeplinkUrl, orderNumber);
     } else if (selectedPaymentMethod == 'GOPAY') {
       final deeplinkUrl = response['actions'][1]['url'];
+      // Update link_url in payments table
+      await supabase
+          .from('payments')
+          .update({'link_url': deeplinkUrl})
+          .eq('order_id', (await supabase
+              .from('orders')
+              .select('id')
+              .eq('order_number', orderNumber)
+              .single())['id']);
+      
       _showEWalletInstructions(context, 'GoPay', deeplinkUrl, orderNumber);
     } else if (selectedPaymentMethod == 'DANA') {
       final redirectUrl = response['actions'][0]['url'];
@@ -413,122 +447,670 @@ class _COBuyPageState extends State<COBuyPage> {
     );
   }
 }
-  void _showEWalletInstructions(BuildContext context, String walletName, String deeplinkUrl, String orderNumber) {
-    final isShopeePay = walletName == 'ShopeePay';
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            title: Container(
-              padding: EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isShopeePay ? Colors.orange : Colors.blue,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.wallet, color: Colors.white),
-                  SizedBox(width: 10),
-                  Text(walletName, style: TextStyle(color: Colors.white)),
-                ],
-              ),
+DateTime? paymentExpiryTime;
+Timer? paymentTimer;
+bool isPaymentExpired = false;
+
+// Modify _showBankTransferInstructions and _showEWalletInstructions to include countdown logic
+void _showBankTransferInstructions(BuildContext context, String vaNumber, String orderNumber) async {
+  // Get payment created_at time from Supabase
+  final paymentData = await supabase
+      .from('payments')
+      .select('created_at')
+      .eq('order_id', (await supabase
+          .from('orders')
+          .select('id')
+          .eq('order_number', orderNumber)
+          .single())['id'])
+      .single();
+
+  if (paymentData != null) {
+    // Parse the timestamp and remove microseconds and timezone offset
+    final createdAtStr = paymentData['created_at'].toString();
+    final cleanedCreatedAtStr = createdAtStr.split('.')[0]; // Remove microseconds
+    final createdAt = DateTime.parse(cleanedCreatedAtStr);
+
+    paymentExpiryTime = createdAt.add(Duration(days: 1)); // 1 day expiry for bank transfer
+    _startPaymentTimer(context, orderNumber); // Pass context here
+  }
+
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Container(
+            padding: EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.blue[800],
+              borderRadius: BorderRadius.circular(8),
             ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildStoreInfoCard(orderNumber),
-                  SizedBox(height: 20),
-                  
-                  if (isPaymentCompleted)
-                    _buildPaymentSuccessContent()
-                  else
-                    Card(
-                      elevation: 3,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            Text('QR Code Pembayaran $walletName', 
-                                 style: TextStyle(fontSize: 16)),
-                            SizedBox(height: 16),
-                            Container(
-                              padding: EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: _buildQRCodeWidget(deeplinkUrl),
-                            ),
-                            SizedBox(height: 16),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: isShopeePay ? Colors.orange : Colors.blue,
-                              ),
-                              onPressed: () async {
-                                try {
-                                  await launch(
-                                    deeplinkUrl,
-                                    forceSafariVC: false,
-                                    universalLinksOnly: false,
-                                  );
-                                } catch (e) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Gagal membuka halaman pembayaran'),
-                                      duration: Duration(seconds: 3),
+            child: Row(
+              children: [
+                Icon(Icons.account_balance, color: Colors.white),
+                SizedBox(width: 10),
+                Text('BSI Virtual Account', style: TextStyle(color: Colors.white)),
+              ],
+            ),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildStoreInfoCard(orderNumber),
+                SizedBox(height: 20),
+                
+                if (isPaymentCompleted)
+                  _buildPaymentSuccessContent()
+                else if (isPaymentExpired)
+                  _buildPaymentExpiredContent(context, orderNumber)
+                else
+                  Column(
+                    children: [
+                      Card(
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Column(
+                            children: [
+                              Text('Nomor Virtual Account', style: TextStyle(fontSize: 16)),
+                              SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    vaNumber,
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue[800],
                                     ),
-                                  );
-                                }
-                              },
-                              child: Text('Buka di $walletName', 
-                                  style: TextStyle(color: Colors.white)),
-                            ),
-                            SizedBox(height: 16),
-                            Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
-                            SizedBox(height: 8),
-                            Text(
-                              'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
-                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                                (Match m) => '${m[1]}.',
-                              )}',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green[800],
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.copy, color: Colors.blue),
+                                    onPressed: () {
+                                      Clipboard.setData(ClipboardData(text: vaNumber));
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Nomor VA berhasil disalin!')),
+                                      );
+                                    },
+                                  ),
+                                ],
                               ),
-                            ),
-                            SizedBox(height: 16),
-                            Text(
-                              'Scan QR code untuk membayar via $walletName',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
+                              Divider(),
+                              SizedBox(height: 8),
+                              Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
+                              SizedBox(height: 8),
+                              Text(
+                                'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
+                                  RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                                  (Match m) => '${m[1]}.',
+                                )}',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green[800],
+                                ),
+                              ),
+                              SizedBox(height: 16),
+                              _buildCountdownTimer(context), // Pass context here
+                              SizedBox(height: 8),
+                              Text(
+                                'Pembayaran akan diproses otomatis setelah transfer',
+                                style: TextStyle(fontSize: 12, color: Colors.grey),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
+                    ],
+                  ),
+              ],
             ),
-            actions: [
-              if (!isPaymentCompleted)
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text('Tutup'),
-                ),
-            ],
-          );
-        }
+          ),
+          actions: [
+            if (!isPaymentCompleted && !isPaymentExpired)
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Tutup', style: TextStyle(color: Colors.blue[800])),
+              ),
+          ],
+        );
+      }
+    ),
+  );
+}
+
+void _showEWalletInstructions(BuildContext context, String walletName, String deeplinkUrl, String orderNumber) async {
+  // Get payment created_at time from Supabase
+  final paymentData = await supabase
+      .from('payments')
+      .select('created_at')
+      .eq('order_id', (await supabase
+          .from('orders')
+          .select('id')
+          .eq('order_number', orderNumber)
+          .single())['id'])
+      .single();
+
+  if (paymentData != null) {
+    // Parse the timestamp and remove microseconds and timezone offset
+    final createdAtStr = paymentData['created_at'].toString();
+    final cleanedCreatedAtStr = createdAtStr.split('.')[0]; // Remove microseconds
+    final createdAt = DateTime.parse(cleanedCreatedAtStr);
+    
+    paymentExpiryTime = createdAt.add(Duration(hours: 1)); // 1 hour expiry for e-wallet
+    _startPaymentTimer(context, orderNumber); // Pass context here
+  }
+
+  final isShopeePay = walletName == 'ShopeePay';
+  
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) {
+        return AlertDialog(
+          title: Container(
+            padding: EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isShopeePay ? Colors.orange : Colors.blue,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.wallet, color: Colors.white),
+                SizedBox(width: 10),
+                Text(walletName, style: TextStyle(color: Colors.white)),
+              ],
+            ),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildStoreInfoCard(orderNumber),
+                SizedBox(height: 20),
+                
+                if (isPaymentCompleted)
+                  _buildPaymentSuccessContent()
+                else if (isPaymentExpired)
+                  _buildPaymentExpiredContent(context, orderNumber) // Pass context here
+                else
+                  Column(
+                    children: [
+                      Card(
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Column(
+                            children: [
+                              Text('QR Code Pembayaran $walletName', 
+                                   style: TextStyle(fontSize: 16)),
+                              SizedBox(height: 16),
+                              Container(
+                                padding: EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: _buildQRCodeWidget(deeplinkUrl),
+                              ),
+                              SizedBox(height: 16),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isShopeePay ? Colors.orange : Colors.blue,
+                                ),
+                                onPressed: () async {
+                                  try {
+                                    await launch(
+                                      deeplinkUrl,
+                                      forceSafariVC: false,
+                                      universalLinksOnly: false,
+                                    );
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Gagal membuka halaman pembayaran'),
+                                        duration: Duration(seconds: 3),
+                                      ),
+                                    );
+                                  }
+                                },
+                                child: Text('Buka di $walletName', 
+                                    style: TextStyle(color: Colors.white)),
+                              ),
+                              SizedBox(height: 16),
+                              Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
+                              SizedBox(height: 8),
+                              Text(
+                                'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
+                                  RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                                  (Match m) => '${m[1]}.',
+                                )}',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green[800],
+                                ),
+                              ),
+                              SizedBox(height: 16),
+                              _buildCountdownTimer(context), // Pass context here
+                              SizedBox(height: 8),
+                              Text(
+                                'Scan QR code untuk membayar via $walletName',
+                                style: TextStyle(fontSize: 12, color: Colors.grey),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            if (!isPaymentCompleted && !isPaymentExpired)
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Tutup'),
+              ),
+          ],
+        );
+      }
+    ),
+  );
+}
+
+// Modified to accept context parameter
+void _startPaymentTimer(BuildContext context, String orderNumber) {
+  paymentTimer?.cancel();
+  isPaymentExpired = false;
+  
+  paymentTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+    if (paymentExpiryTime == null) {
+      timer.cancel();
+      return;
+    }
+    
+    final now = DateTime.now();
+    if (now.isAfter(paymentExpiryTime!)) {
+      // Use the context from the dialog to update the state
+      Navigator.of(context, rootNavigator: true).pop();
+      _showPaymentExpiredDialog(context, orderNumber); // Show expired dialog
+      timer.cancel();
+      
+      // Update payment status to failed in database
+      _updatePaymentStatus(orderNumber, 'failed');
+    } else {
+      // This will trigger a rebuild of the dialog content
+      (context as Element).markNeedsBuild();
+    }
+  });
+}
+
+// New method to show payment expired dialog
+void _showPaymentExpiredDialog(BuildContext context, String orderNumber) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      content: _buildPaymentExpiredContent(context, orderNumber),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Tutup'),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> _updatePaymentStatus(String orderNumber, String status) async {
+  try {
+    await supabase
+        .from('payments')
+        .update({'status': status})
+        .eq('order_id', (await supabase
+            .from('orders')
+            .select('id')
+            .eq('order_number', orderNumber)
+            .single())['id']);
+  } catch (e) {
+    debugPrint('Error updating payment status: $e');
+  }
+}
+
+// Modified to accept context parameter
+Widget _buildCountdownTimer(BuildContext context) {
+  if (paymentExpiryTime == null) return SizedBox();
+  
+  final now = DateTime.now();
+  final remaining = paymentExpiryTime!.difference(now);
+  
+  if (remaining.isNegative) {
+    return Text(
+      'Waktu pembayaran telah habis',
+      style: TextStyle(
+        color: Colors.red,
+        fontWeight: FontWeight.bold,
       ),
     );
   }
+  
+  final hours = remaining.inHours;
+  final minutes = remaining.inMinutes.remainder(60);
+  final seconds = remaining.inSeconds.remainder(60);
+  
+  return Column(
+    children: [
+      Text(
+        'Selesaikan pembayaran dalam:',
+        style: TextStyle(fontSize: 12, color: Colors.grey),
+      ),
+      SizedBox(height: 4),
+      StreamBuilder<DateTime>(
+        stream: Stream.periodic(Duration(seconds: 1), (_) => DateTime.now()),
+        builder: (context, snapshot) {
+          final now = DateTime.now();
+          final remaining = paymentExpiryTime!.difference(now);
+          
+          if (remaining.isNegative) {
+            return Text(
+              '00:00:00',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.red,
+              ),
+            );
+          }
+          
+          final hours = remaining.inHours;
+          final minutes = remaining.inMinutes.remainder(60);
+          final seconds = remaining.inSeconds.remainder(60);
+          
+          return Text(
+            '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.orange[800],
+            ),
+          );
+        },
+      ),
+    ],
+  );
+}
+
+Widget _buildPaymentExpiredContent(BuildContext context, String orderNumber) {
+  return Dialog(
+    elevation: 0,
+    backgroundColor: Colors.transparent,
+    insetPadding: EdgeInsets.all(10),
+    child: SingleChildScrollView(
+      child: Stack(
+        children: [
+          Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.9,
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.white, Colors.white, Color(0xFFF5F9FF)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 30,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: EdgeInsets.all(30),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Error icon with animation
+                  Container(
+                    width: 150,
+                    height: 150,
+                    child: Lottie.asset(
+                      'assets/animations/error_pulse.json',
+                      fit: BoxFit.contain,
+                      repeat: false,
+                    ),
+                  ),
+                  
+                  SizedBox(height: 20),
+                  
+                  // Main title
+                  Text(
+                    'Transaksi Gagal',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red[800],
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  
+                  SizedBox(height: 8),
+                  
+                  // Subtitle
+                  Text(
+                    'Pembayaran tidak dapat diproses',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  
+                  SizedBox(height: 25),
+                  
+                // Order details card - Perbaikan alignment ke kiri
+Container(
+  width: double.infinity,
+  padding: EdgeInsets.all(20),
+  decoration: BoxDecoration(
+    color: Colors.grey[50],
+    borderRadius: BorderRadius.circular(12),
+    border: Border.all(color: Colors.grey[200]!),
+  ),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start, // Ini yang diubah
+    children: [
+      // Order number
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Nomor Pesanan',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+          SizedBox(height: 3),
+          Text(
+            '#$orderNumber',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[800],
+            ),
+          ),
+        ],
+      ),
+      
+      SizedBox(height: 8),
+      
+      // Amount
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Jumlah Pembayaran',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[600],
+            ),
+          ),
+          SizedBox(height: 3),
+          Text(
+            'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
+                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                (Match m) => '${m[1]}.',
+              )}',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[800],
+            ),
+          ),
+        ],
+      ),
+      
+      SizedBox(height: 8),
+      
+      // Status
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Status',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[600],
+            ),
+          ),
+          SizedBox(height: 3),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.red[50],
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.red[200]!),
+            ),
+            child: Text(
+              'Gagal',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.red[800],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ],
+  ),
+),
+                  
+                  SizedBox(height: 17),
+                  
+                  // Failure reason card
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFFFEBEE), Color(0xFFFFCDD2)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red[100]!),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Alasan Kegagalan:',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red[800],
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          '• Waktu pembayaran telah habis (melebihi batas waktu)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.red[700],
+                          ),
+                        ),
+                        Text(
+                          '• Transaksi otomatis dibatalkan oleh sistem',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.red[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  SizedBox(height: 25),
+                  
+                  // Di dalam widget Anda
+TextButton(
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ChatPage()),
+    );
+  },
+  child: RichText(
+    text: TextSpan(
+      children: [
+        TextSpan(
+          text: 'Butuh bantuan? ',
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 13,
+          ),
+        ),
+        TextSpan(
+          text: 'Hubungi CS',
+          style: TextStyle(
+            color: Colors.red[600],
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            decoration: TextDecoration.underline,
+          ),
+        ),
+      ],
+    ),
+  ),
+),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildQRCodeWidget(String deeplinkUrl) {
     return SizedBox(
@@ -546,113 +1128,6 @@ class _COBuyPageState extends State<COBuyPage> {
     );
   }
 
-  void _showBankTransferInstructions(BuildContext context, String vaNumber, String orderNumber) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: Container(
-              padding: EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.blue[800],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.account_balance, color: Colors.white),
-                  SizedBox(width: 10),
-                  Text('BSI Virtual Account', style: TextStyle(color: Colors.white)),
-                ],
-              ),
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildStoreInfoCard(orderNumber),
-                  SizedBox(height: 20),
-                  
-                  if (isPaymentCompleted)
-                    _buildPaymentSuccessContent()
-                  else
-                    Card(
-                      elevation: 3,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            Text('Nomor Virtual Account', style: TextStyle(fontSize: 16)),
-                            SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  vaNumber,
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue[800],
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.copy, color: Colors.blue),
-                                  onPressed: () {
-                                    Clipboard.setData(ClipboardData(text: vaNumber));
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Nomor VA berhasil disalin!')),
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                            Divider(),
-                            SizedBox(height: 8),
-                            Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
-                            SizedBox(height: 8),
-                            Text(
-                              'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
-                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                                (Match m) => '${m[1]}.',
-                              )}',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green[800],
-                              ),
-                            ),
-                            SizedBox(height: 16),
-                            Text(
-                              'Pembayaran akan diproses otomatis setelah transfer',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            actions: [
-              if (!isPaymentCompleted)
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text('Tutup', style: TextStyle(color: Colors.blue[800])),
-                ),
-            ],
-          );
-        }
-      ),
-    );
-  }
 
   Widget _buildStoreInfoCard(String orderNumber) {
     return Card(
@@ -1173,7 +1648,7 @@ void _showPaymentSuccessDialog(BuildContext context, String orderNumber) {
                           Navigator.popUntil(context, (route) => route.isFirst);
                         },
                         child: Text(
-                          'Kembali ke Beranda',
+                          'Tutup',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -1420,111 +1895,126 @@ void _showPaymentSuccessDialog(BuildContext context, String orderNumber) {
 
                     const SizedBox(height: 16),
 
-                    // Product List
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Show all products in cart
-                            ...widget.cartItems.map((item) {
-                              final price = double.tryParse(item.price) ?? 0;
-                              final itemTotal = price * item.quantity;
-                              
-                              return Column(
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        item.category.toUpperCase(),
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18,
-                                          color: Colors.black,
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      Text(
-                                        '${item.quantity} item${item.quantity > 1 ? 's' : ''}',
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Row(
-                                    children: [
-                                      Container(
-                                        width: 140,
-                                        height: 140,
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey[200],
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: item.imageUrl.isNotEmpty
-                                            ? Image.network(
-                                                item.imageUrl,
-                                                fit: BoxFit.contain,
-                                                errorBuilder: (context, error, stackTrace) =>
-                                                    const Icon(Icons.image_not_supported),
-                                              )
-                                            : const Icon(Icons.image_not_supported),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              item.name,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 18,
-                                                color: Colors.black,
-                                              ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              'Rp ${price.toStringAsFixed(0).replaceAllMapped(
-                                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                                                (Match m) => '${m[1]}.',
-                                              )}',
-                                              style: const TextStyle(
-                                                color: Color(0xFFFF1E00),
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 15,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              'Total: Rp ${itemTotal.toStringAsFixed(0).replaceAllMapped(
-                                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                                                (Match m) => '${m[1]}.',
-                                              )}',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w500,
-                                                fontSize: 15,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (item != widget.cartItems.last) 
-                                    const Divider(height: 24, thickness: 1),
-                                ],
-                              );
-                            }).toList(),
-                          ],
-                        ),
+                                      // Product List - Updated version
+Card(
+  child: Padding(
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Show all products in cart
+        ...widget.cartItems.map((item) {
+          final price = double.tryParse(item.price) ?? 0;
+          final itemTotal = price * item.quantity;
+          
+          return InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProductDetailPage(productId: item.product_id.toString()),
+                ),
+              );
+            },
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      item.category.toUpperCase(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Colors.black,
                       ),
                     ),
-
+                    const Spacer(),
+                    Text(
+                      '${item.quantity} item${item.quantity > 1 ? 's' : ''}',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Container(
+                      width: 140,
+                      height: 140,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: item.imageUrl.isNotEmpty
+                          ? Image.network(
+                              item.imageUrl,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) => 
+                                Image.asset(
+                                  'assets/images/placeholder.png',
+                                  fit: BoxFit.cover,
+                                ),
+                            )
+                          : Image.asset(
+                              'assets/images/placeholder.png',
+                              fit: BoxFit.cover,
+                            ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              color: Colors.black,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Rp ${price.toStringAsFixed(0).replaceAllMapped(
+                              RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                              (Match m) => '${m[1]}.',
+                            )}',
+                            style: const TextStyle(
+                              color: Color(0xFFFF1E00),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Total: Rp ${itemTotal.toStringAsFixed(0).replaceAllMapped(
+                              RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                              (Match m) => '${m[1]}.',
+                            )}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w500,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (item != widget.cartItems.last) 
+                  const Divider(height: 24, thickness: 1),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    ),
+  ),
+),
                     const SizedBox(height: 16),
 
                     // Payment Method

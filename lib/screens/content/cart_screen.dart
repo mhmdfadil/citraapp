@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '/screens/content/chat.dart';
 import '/screens/content/checkout.dart';
 import '/screens/user_screen.dart';
+import 'package:citraapp/screens/content/product_detail_page.dart';
 
 class CartContent extends StatefulWidget {
   const CartContent({super.key});
@@ -68,6 +69,7 @@ class _CartContentState extends State<CartContent> {
         errorMessage = null;
       });
 
+      // First fetch the cart items with product information
       final response = await supabase
           .from('carts')
           .select('''
@@ -75,7 +77,7 @@ class _CartContentState extends State<CartContent> {
             count, 
             user_id, 
             product_id, 
-            products:product_id (id, name, price_display, photos, stock, categories!inner(id, name))
+            products:product_id (id, name, price_display, stock, categories!inner(id, name))
           ''')
           .eq('user_id', userId!)
           .order('created_at', ascending: false);
@@ -91,6 +93,27 @@ class _CartContentState extends State<CartContent> {
       final List<CartItem> loadedItems = [];
       final Map<int, int> stocks = {};
       
+      // Fetch photos for all products in one query
+      final productIds = response.map<String>((item) {
+        final product = item['products'] as Map<String, dynamic>? ?? {};
+        return product['id'].toString();
+      }).toList();
+
+      final photosResponse = await supabase
+          .from('photo_items')
+          .select('id, name, product_id')
+          .in_('product_id', productIds)
+          .order('created_at', ascending: true);
+
+      // Create a map of product_id to its first photo
+      final Map<int, String> productPhotos = {};
+      for (var photo in photosResponse) {
+        final productId = photo['product_id'] as int;
+        if (!productPhotos.containsKey(productId)) {
+          productPhotos[productId] = photo['name'] as String;
+        }
+      }
+
       for (var item in response) {
         try {
           final product = item['products'] as Map<String, dynamic>? ?? {};
@@ -101,14 +124,8 @@ class _CartContentState extends State<CartContent> {
           // Store product stock
           stocks[productId] = stock;
 
-          // Handle photos
-          dynamic photos = product['photos'];
-          String firstPhotoUrl = '';
-          if (photos is List && photos.isNotEmpty) {
-            firstPhotoUrl = photos[0] as String;
-          } else if (photos is String) {
-            firstPhotoUrl = photos;
-          }
+          // Get the photo URL from our photos map
+          String firstPhotoUrl = productPhotos[productId] ?? '';
 
           loadedItems.add(CartItem(
             id: item['id'] as int,
@@ -317,7 +334,7 @@ class _CartContentState extends State<CartContent> {
     );
   }
 
-   Widget _buildBottomNavigationBar() {
+  Widget _buildBottomNavigationBar() {
     // Check if any selected item has stock = 0
     bool hasOutOfStockSelectedItems = items.any((item) => 
         item.isSelected && (productStocks[item.product_id] ?? 0) <= 0);
@@ -466,83 +483,92 @@ class _CartContentState extends State<CartContent> {
   }
 
   Widget _buildCartItem(CartItem item) {
-    final priceValue = double.tryParse(item.price) ?? 0;
-    final itemTotal = priceValue * item.count;
-    final isEditing = editMode[item.id] ?? false;
-    final stock = productStocks[item.product_id] ?? 0;
+  final priceValue = double.tryParse(item.price) ?? 0;
+  final itemTotal = priceValue * item.count;
+  final isEditing = editMode[item.id] ?? false;
+  final stock = productStocks[item.product_id] ?? 0;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 3,
-            offset: const Offset(0, 1),
+  return Container(
+    margin: const EdgeInsets.only(bottom: 16),
+    decoration: BoxDecoration(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.grey.withOpacity(0.1),
+          spreadRadius: 1,
+          blurRadius: 3,
+          offset: const Offset(0, 1),
+        ),
+      ],
+    ),
+    child: Column(
+      children: [
+        // Header with checkbox, category and edit button
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: Checkbox(
+                  value: item.isSelected,
+                  onChanged: (value) {
+                    setState(() {
+                      item.isSelected = value!;
+                      selectAll = items.every((item) => item.isSelected);
+                      _calculateTotal();
+                    });
+                  },
+                  activeColor: Colors.black,
+                  checkColor: Colors.grey,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  item.category,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => _toggleEditMode(item.id),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey[200],
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                ),
+                child: Text(
+                  isEditing ? 'Selesai' : 'Ubah',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Header with checkbox, category and edit button
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: Checkbox(
-                    value: item.isSelected,
-                    onChanged: (value) {
-                      setState(() {
-                        item.isSelected = value!;
-                        selectAll = items.every((item) => item.isSelected);
-                        _calculateTotal();
-                      });
-                    },
-                    activeColor: Colors.black,
-                    checkColor: Colors.grey,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    item.category,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () => _toggleEditMode(item.id),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey[200],
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  ),
-                  child: Text(
-                    isEditing ? 'Selesai' : 'Ubah',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          
-          // Product content
-          Padding(
+        ),
+        
+        // Product content - Make this row clickable
+        InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ProductDetailPage(productId: item.product_id.toString()),
+              ),
+            );
+          },
+          child: Padding(
             padding: const EdgeInsets.all(12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -569,10 +595,16 @@ class _CartContentState extends State<CartContent> {
                                 ),
                               );
                             },
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(Icons.error_outline, color: Colors.red),
+                            errorBuilder: (context, error, stackTrace) => 
+                                Image.asset(
+                                  'assets/images/placeholder.png',
+                                  fit: BoxFit.cover,
+                                ),
                           )
-                        : const Icon(Icons.image_not_supported),
+                        : Image.asset(
+                            'assets/images/placeholder.png',
+                            fit: BoxFit.cover,
+                        ),
                   ),
                 ),
                 
@@ -713,40 +745,40 @@ class _CartContentState extends State<CartContent> {
               ],
             ),
           ),
-          
-         // Delete button (only in edit mode)
-if (isEditing)
-  Padding(
-    padding: const EdgeInsets.only(bottom: 12, right: 12),
-    child: Align(
-      alignment: Alignment.centerRight,
-      child: SizedBox(
-        width: 150, // Fixed width
-        child: ElevatedButton(
-          onPressed: () => _showDeleteConfirmationDialog(item.id),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.grey[200],
-            foregroundColor: Colors.red,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 10),
-          ),
-          child: const Text(
-            'Hapus',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
         ),
-      ),
+        
+        // Delete button (only in edit mode)
+        if (isEditing)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12, right: 12),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: 150, // Fixed width
+                child: ElevatedButton(
+                  onPressed: () => _showDeleteConfirmationDialog(item.id),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey[200],
+                    foregroundColor: Colors.red,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  child: const Text(
+                    'Hapus',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     ),
-  ),
-        ],
-      ),
-    );
-  }
-
+  );
+}
   void _showDeleteConfirmationDialog(int cartId) {
     showDialog(
       context: context,

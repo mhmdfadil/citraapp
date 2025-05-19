@@ -154,11 +154,6 @@ class _InvoicePageState extends State<InvoicePage> {
       // Generate PDF
       final pdf = await _generatePdfDocument(data);
       
-      // Request storage permission
-      if (!await _requestStoragePermission()) {
-        throw 'Izin penyimpanan ditolak';
-      }
-      
       // Save PDF to device
       final filePath = await _savePdfToDevice(pdf, data['order']['order_number'].toString());
       
@@ -301,7 +296,7 @@ Future<pw.Document> _generatePdfDocument(Map<String, dynamic> data) async {
                           ],
                         ),
                       ),
-                      pw.SizedBox(width: 12),
+                      pw.SizedBox(width: 220),
                       pw.Expanded(
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -339,7 +334,7 @@ Future<pw.Document> _generatePdfDocument(Map<String, dynamic> data) async {
                   ),
                 ),
 
-                pw.SizedBox(height: 16),
+                pw.SizedBox(height: 8),
 
                 // Shipping address
                 pw.Container(
@@ -567,6 +562,7 @@ Future<pw.Document> _generatePdfDocument(Map<String, dynamic> data) async {
                               fontSize: 10,
                             ),
                           ),
+                          pw.SizedBox(height: 6),
                           pw.Text(
                             order['payment_method'] ?? 'Tidak diketahui',
                             style: pw.TextStyle(fontSize: 10)),
@@ -582,16 +578,11 @@ Future<pw.Document> _generatePdfDocument(Map<String, dynamic> data) async {
                               fontSize: 10,
                             ),
                           ),
+                          pw.SizedBox(height: 6),
                           pw.Container(
                             padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: pw.BoxDecoration(
-                              color: PdfColor.fromInt(statusColors.value),
-                              borderRadius: pw.BorderRadius.circular(16),
-                              border: pw.Border.all(
-                                color: PdfColor.fromInt(statusColor.value),
-                                width: 1,
-                              ),
-                            ),
+                         child: pw.Align(
+                            alignment: pw.Alignment.centerLeft,
                             child: pw.Text(
                               paymentStatus,
                               style: pw.TextStyle(
@@ -600,6 +591,7 @@ Future<pw.Document> _generatePdfDocument(Map<String, dynamic> data) async {
                                 fontSize: 10,
                               ),
                             ),
+                          ),
                           ),
                         ],
                       ),
@@ -927,7 +919,7 @@ Future<pw.Document> _generatePdfDocument(Map<String, dynamic> data) async {
                                           ],
                                         ),
                                       ),
-                                      const SizedBox(width: 12),
+                                      const SizedBox(width: 35),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,

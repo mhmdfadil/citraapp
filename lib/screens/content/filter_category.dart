@@ -64,15 +64,33 @@ class _FilterCategoryPageState extends State<FilterCategoryPage> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await _supabase
+      // First fetch all products
+      final productsResponse = await _supabase
           .from('products')
-          .select('id, name, photos, price_ori, price_display, sold')
+          .select('id, name, price_ori, price_display, sold')
           .eq('category_id', widget.categoryId)
           .order(orderBy, ascending: ascending);
 
+      // Convert to list of products
+      List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(productsResponse);
+
+      // For each product, fetch its first photo
+      for (var product in products) {
+        final photoResponse = await _supabase
+            .from('photo_items')
+            .select('id, name')
+            .eq('product_id', product['id'])
+            .order('created_at', ascending: true)
+            .limit(1);
+
+        if (photoResponse.isNotEmpty) {
+          product['photo_item'] = photoResponse[0];
+        }
+      }
+
       setState(() {
-        _products = List<Map<String, dynamic>>.from(response);
-        _filteredProducts = List<Map<String, dynamic>>.from(response);
+        _products = products;
+        _filteredProducts = List<Map<String, dynamic>>.from(products);
         _isLoading = false;
       });
     } catch (e) {
@@ -243,9 +261,10 @@ class _FilterCategoryPageState extends State<FilterCategoryPage> {
   }
 
   Widget _buildProductCard(Map<String, dynamic> product, bool isSmallScreen) {
-    final String? photoPath = product['photos'];
-    final imageUrl = (photoPath != null && photoPath.isNotEmpty)
-        ? _supabase.storage.from('picture-products').getPublicUrl(photoPath)
+    // Get the photo item if it exists
+    final photoItem = product['photo_item'] as Map<String, dynamic>?;
+    final imageUrl = photoItem != null 
+        ? _supabase.storage.from('picture-products').getPublicUrl(photoItem['name'])
         : null;
 
     final soldCount = product['sold'] ?? 0;
@@ -273,33 +292,41 @@ class _FilterCategoryPageState extends State<FilterCategoryPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Image container with fixed aspect ratio
-            Container(
-              height: 150, // Fixed height for image
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              ),
-              child: imageUrl != null
+            AspectRatio(
+              aspectRatio: 1,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
+                  color: Colors.grey[200],
+                ),
+                child: imageUrl?.isNotEmpty == true
                   ? Image.network(
-                      imageUrl,
+                      imageUrl!,
                       fit: BoxFit.cover,
                       loadingBuilder: (context, child, loadingProgress) {
                         if (loadingProgress == null) return child;
                         return Center(
                           child: CircularProgressIndicator(
-                            color: const Color(0xFFF273F0),
                             value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded /
-                                    loadingProgress.expectedTotalBytes!
-                                : null,
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
                           ),
                         );
                       },
-                      errorBuilder: (context, error, stackTrace) =>
-                          const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
+                      errorBuilder: (context, error, stackTrace) => 
+                          Image.asset(
+                            'assets/images/placeholder.png',
+                            fit: BoxFit.cover,
+                          ),
                     )
-                  : const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
+                  : Image.asset(
+                      'assets/images/placeholder.png',
+                      fit: BoxFit.cover,
+                    ),
+              ),
             ),
             // Content section with flexible height but constrained
             Expanded(

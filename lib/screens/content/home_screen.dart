@@ -72,14 +72,40 @@ class _HomeContentState extends State<HomeContent> {
 
   Future<void> _fetchProducts() async {
     try {
-      final response = await supabase
+      // Pertama ambil produk tanpa foto
+      final productsResponse = await supabase
           .from('products')
-          .select('id, name, price_display, photos, sold')
+          .select('id, name, price_display, sold')
           .order('created_at', ascending: false);
+
+      // Kemudian ambil foto pertama untuk setiap produk
+      final productsWithPhotos = await Future.wait(
+        (productsResponse as List<dynamic>).map<Future<Map<String, dynamic>>>((product) async {
+          try {
+            final photoResponse = await supabase
+                .from('photo_items')
+                .select('name')
+                .eq('product_id', product['id'])
+                .order('created_at', ascending: true)
+                .limit(1);
+
+            return {
+              ...product,
+              'photo': photoResponse.isNotEmpty ? photoResponse[0]['name'] : null,
+            };
+          } catch (e) {
+            // Jika error saat mengambil foto, tetap return produk dengan photo null
+            return {
+              ...product,
+              'photo': null,
+            };
+          }
+        }).toList(),
+      );
 
       if (mounted) {
         setState(() {
-          _products = List<Map<String, dynamic>>.from(response);
+          _products = productsWithPhotos;
           _isLoadingProducts = false;
         });
       }
@@ -93,19 +119,14 @@ class _HomeContentState extends State<HomeContent> {
     }
   }
 
-  String _getImageUrl(String imagePath) {
-    if (imagePath.isEmpty) return '';
+  String _getImageUrl(String? imagePath) {
+    if (imagePath == null || imagePath.isEmpty) return '';
     
     if (imagePath.startsWith('http')) {
       return imagePath;
     }
     
-    final String publicUrl = supabase
-        .storage
-        .from(_bucketName)
-        .getPublicUrl(imagePath);
-    
-    return publicUrl;
+    return supabase.storage.from(_bucketName).getPublicUrl(imagePath);
   }
 
   void _handleAuthChange(Session? session) async {
@@ -312,7 +333,7 @@ class _HomeContentState extends State<HomeContent> {
           itemCount: _products.length,
           itemBuilder: (context, index) {
             final product = _products[index];
-            final imageUrl = _getImageUrl(product['photos'] ?? '');
+            final imageUrl = _getImageUrl(product['photo'] ?? '');
             final soldCount = product['sold'] ?? 0;
             final formattedSold = _formatSoldCount(soldCount is int ? soldCount : int.tryParse(soldCount.toString()) ?? 0);
             

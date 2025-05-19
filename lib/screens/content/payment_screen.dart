@@ -1,4 +1,5 @@
 import 'package:citraapp/screens/content/invoice.dart';
+import 'package:citraapp/screens/content/invoice_payment.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -80,7 +81,7 @@ class _PaymentContentState extends State<PaymentContent> {
     setState(() {
       filteredOrders = orders.where((order) {
         // Filter berdasarkan status order atau payment
-        final statusMatch = order['status'] == selectedStatus || 
+        final statusMatch = 
                           (order['payments'] != null && 
                            order['payments'].isNotEmpty && 
                            order['payments'][0]['status'] == selectedStatus);
@@ -306,7 +307,7 @@ class _PaymentContentState extends State<PaymentContent> {
                                       ),
                                       SizedBox(height: 4),
                                       Text(
-                                        'Alamat: ${address?['street_address'] ?? ''}, ${address?['village'] ?? ''}, ${address?['district'] ?? ''}',
+                                        'Alamat: ${address?['street_address'] ?? ''}',
                                         style: TextStyle(fontSize: 13),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -334,7 +335,7 @@ class _PaymentContentState extends State<PaymentContent> {
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
                                           Text(
-                                            'Tanggal: ${_formatDate(order['created_at'])}',
+                                            'Tanggal: ${_formatDate(payment['created_at'])}',
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: Colors.grey[600],
@@ -369,8 +370,24 @@ class _PaymentContentState extends State<PaymentContent> {
                                                 IconButton(
                                                   icon: Icon(Icons.remove_red_eye_outlined, color: Colors.deepPurple),
                                                   onPressed: () {
-                                                    // Detail functionality
+                                                    final orderId = order['id']?.toString() ?? '';
+                                                    print('Order ID yang akan dikirim: $orderId'); 
+                                                    if (orderId.isNotEmpty) {
+                                                      Navigator.push(
+                                                        context,
+                                                        MaterialPageRoute(
+                                                          builder: (context) => InvoicePaymentPage(
+                                                            orderId: orderId,
+                                                          ),
+                                                        ),
+                                                      );
+                                                    } else {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        SnackBar(content: Text('Gagal mendapatkan ID pesanan')),
+                                                      );
+                                                    }
                                                   },
+                                                  
                                                   tooltip: 'Detail Pembayaran',
                                                 ),
                                               ],
