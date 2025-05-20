@@ -399,44 +399,69 @@ class _InvoicePaymentPageState extends State<InvoicePaymentPage> {
               ),
               const SizedBox(height: 8),
               Center(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Colors.grey.shade200,
-                      width: 1,
-                    ),
-                  ),
-                  child: QrImageView(
-                    data: payment['link_url'],
-                    version: QrVersions.auto,
-                    size: 200,
-                    eyeStyle: const QrEyeStyle(
-                      eyeShape: QrEyeShape.square,
-                      color: Color(0xFF2E86C1),
-                    ),
-                    dataModuleStyle: const QrDataModuleStyle(
-                      dataModuleShape: QrDataModuleShape.square,
-                      color: Colors.black,
-                    ),
-                  ),
-                ),
-              ),
+  child: Container(
+    padding: const EdgeInsets.all(5),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+        color: Colors.grey.shade200,
+        width: 1,
+      ),
+    ),
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        // QR Code dengan dot lingkaran (paling mirip bintang)
+        QrImageView(
+          data: payment['link_url'],
+          version: QrVersions.auto,
+          size: 280,
+          eyeStyle: const QrEyeStyle(
+            eyeShape: QrEyeShape.square,
+            color: Color(0xFF2E86C1),
+          ),
+          dataModuleStyle: const QrDataModuleStyle(
+            dataModuleShape: QrDataModuleShape.circle, // Dot bulat (paling dekat dengan bintang)
+            color: Colors.black,
+          ),
+          gapless: false, // Pastikan dot tidak masuk area tengah
+        ),
+
+        // Logo di tengah (40x40)
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: Colors.white, // Background putih agar dot tidak terlihat
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Image.asset('assets/images/logo.png'),
+        ),
+      ],
+    ),
+  ),
+),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () async {
                     final url = payment['link_url'];
-                    if (await canLaunch(url)) {
-                      await launch(url);
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Gagal membuka link pembayaran')),
-                      );
-                    }
+                     try {
+                                    await launch(
+                                      url,
+                                      forceSafariVC: false,
+                                      universalLinksOnly: false,
+                                    );
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Gagal membuka halaman pembayaran'),
+                                        duration: Duration(seconds: 3),
+                                      ),
+                                    );
+                                  }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: paymentMethod == 'gopay' ? const Color(0xFF00AA13) : const Color(0xFFEE2D24),
@@ -840,7 +865,7 @@ class _InvoicePaymentPageState extends State<InvoicePaymentPage> {
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
         title: const Text(
-          'Detail Pembayaran',
+          'Rincian Pembayaran',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -848,7 +873,7 @@ class _InvoicePaymentPageState extends State<InvoicePaymentPage> {
           ),
         ),
         centerTitle: false,
-        backgroundColor: const Color(0xFF2E86C1),
+        backgroundColor: const Color(0xFF87CEEB),
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [

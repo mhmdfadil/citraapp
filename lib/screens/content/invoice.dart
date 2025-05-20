@@ -739,7 +739,7 @@ Future<pw.Document> _generatePdfDocument(Map<String, dynamic> data) async {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Color(0xFFE6F7FF),
+               Color(0xFFBBDEFB),
               Colors.white,
             ],
           ),

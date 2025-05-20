@@ -1089,21 +1089,55 @@ TextButton(
   );
 }
 
+
   Widget _buildQRCodeWidget(String deeplinkUrl) {
-    return SizedBox(
-      width: 200,
-      height: 200,
-      child: QrImageView(
-        data: deeplinkUrl,
-        version: QrVersions.auto,
-        size: 200,
-        gapless: false,
-        embeddedImageStyle: QrEmbeddedImageStyle(
-          size: Size(40, 40),
+  return SizedBox(
+    width: 200,
+    height: 200,
+    child: Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
         ),
       ),
-    );
-  }
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          QrImageView(
+            data: deeplinkUrl,
+            version: QrVersions.auto,
+            size: 200,
+            gapless: false,
+            eyeStyle: const QrEyeStyle(
+              eyeShape: QrEyeShape.square,
+              color: Color(0xFF2E86C1),
+            ),
+            dataModuleStyle: const QrDataModuleStyle(
+              dataModuleShape: QrDataModuleShape.circle,
+              color: Colors.black,
+            ),
+            embeddedImageStyle: QrEmbeddedImageStyle(
+              size: Size(40, 40),
+            ),
+          ),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Image.asset('assets/images/logo.png'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   
   Widget _buildStoreInfoCard(String orderNumber) {

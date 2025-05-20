@@ -138,14 +138,19 @@ class _FavoritPageState extends State<FavoritPage> {
   }
 
   String _formatSoldCount(int sold) {
-    if (sold < 10) return sold.toString();
-    if (sold < 100) return '10+';
-    if (sold < 1000) return '100+';
-    if (sold < 10000) return '1RB+';
-    if (sold < 100000) return '10RB+';
-    if (sold < 1000000) return '100RB+';
-    return '1JT+';
+  if (sold < 1000) {
+    return sold.toString();
+  } else if (sold < 10000) {
+    double thousands = sold / 1000;
+    return thousands.toStringAsFixed(thousands % 1 == 0 ? 0 : 1) + ' K+';
+  } else if (sold < 1000000) {
+    double thousands = sold / 1000;
+    return thousands.toStringAsFixed(thousands % 1 == 0 ? 0 : 1) + ' K+';
+  } else {
+    double millions = sold / 1000000;
+    return millions.toStringAsFixed(millions % 1 == 0 ? 0 : 1) + ' JT+';
   }
+}
 
   void _handleSortChange(String sortType) {
     setState(() {
