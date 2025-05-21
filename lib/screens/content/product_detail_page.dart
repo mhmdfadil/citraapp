@@ -429,7 +429,7 @@ String _formatPrice(int price) {
             onTap: () => _changeImage(index),
             child: Container(
               width: 50,  // Lebar thumbnail ditambah
-              margin: const EdgeInsets.symmetric(horizontal: 8),  // Jarak antar thumbnail diperbesar
+              margin: const EdgeInsets.symmetric(horizontal: 5),  // Jarak antar thumbnail diperbesar
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.3),  // Background semi-transparan
                 borderRadius: BorderRadius.circular(8),

@@ -296,7 +296,7 @@ class _SplashScreenState extends State<SplashScreen>
             
             // Floating shopping bags decoration
             Positioned(
-              top: 50,
+              top: 20,
               right: 30,
               child: Opacity(
                 opacity: 0.6,
@@ -371,14 +371,14 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ),
                       
-                      SizedBox(height: 30),
+                      SizedBox(height: 16),
                       
                       // Cosmetic Image with luxurious frame
                       Hero(
                         tag: 'cosmetic-hero',
                         child: Container(
-                          width: 280,
-                          height: 280,
+                          width: 180,
+                          height: 180,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
@@ -410,8 +410,8 @@ class _SplashScreenState extends State<SplashScreen>
                                 ),
                               ),
                               Container(
-                                width: 250,
-                                height: 250,
+                                width: 150,
+                                height: 150,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   boxShadow: [
@@ -424,7 +424,7 @@ class _SplashScreenState extends State<SplashScreen>
                                 ),
                                 child: ClipOval(
                                   child: Image.asset(
-                                    'assets/images/logo.png',
+                                    'assets/images/logos.png',
                                     fit: BoxFit.cover,
                                   ),
                                 ),
@@ -434,7 +434,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ),
                       
-                      SizedBox(height: 40),
+                      SizedBox(height: 28),
                       
                       // Luxurious title with gradient
                       ShaderMask(
@@ -451,7 +451,7 @@ class _SplashScreenState extends State<SplashScreen>
                         child: Text(
                           'BEAUTY FOR EVERYONE',
                           style: TextStyle(
-                            fontSize: 30,
+                            fontSize: 25,
                             fontWeight: FontWeight.w800,
                             letterSpacing: 4,
                             shadows: [
@@ -465,8 +465,8 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ),
                       
-                      SizedBox(height: 10),
-                      
+                      SizedBox(height: 8),
+                    
                       // Shopping text with icon
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -489,7 +489,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ],
                       ),
                       
-                      SizedBox(height: 25),
+                      SizedBox(height: 19),
                       
                       // Description Text with elegant border
                       Container(
@@ -516,7 +516,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ),
                       ),
                       
-                      SizedBox(height: 30),
+                      SizedBox(height: 25),
                       
                       // SPECIAL OFFER section - The focal point
                       Stack(
@@ -524,8 +524,8 @@ class _SplashScreenState extends State<SplashScreen>
                         children: [
                           // Background glow
                           Container(
-                            width: 280,
-                            height: 100,
+                            width: 320,
+                            height: 80,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(20),
                               boxShadow: [
@@ -617,7 +617,7 @@ class _SplashScreenState extends State<SplashScreen>
                         ],
                       ),
                       
-                      SizedBox(height: 40),
+                      SizedBox(height: 30),
                       
                       // Shop Now Button with luxury touch
                       Container(
