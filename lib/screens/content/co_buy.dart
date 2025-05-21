@@ -369,12 +369,33 @@ class _COBuyPageState extends State<COBuyPage> {
       setState(() => isProcessingOrder = false);
     }
   }
+
+  Future<String?> _getUserEmail(String userId) async {
+  try {
+    final response = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', userId)
+        .single();
+
+    return response['email'] as String?;
+  } catch (e) {
+    debugPrint('Error fetching user email: $e');
+    return null;
+  }
+}
+
    Future<void> _processMidtransPayment(String orderNumber, double amount) async {
   try {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('user_id');
+    final userEmail = userId != null ? await _getUserEmail(userId) : null;
+
     final response = await MidtransService.createTransaction(
       orderId: orderNumber,
       grossAmount: amount,
       paymentMethod: selectedPaymentMethod,
+      customerEmail: userEmail,
     );
 
     // Get order ID to update payment record

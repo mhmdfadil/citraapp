@@ -16,20 +16,24 @@ class MidtransService {
     required String orderId,
     required double grossAmount,
     String? paymentMethod,
+      String? customerEmail,
   }) async {
     final url = Uri.parse(_snapUrl);
     
     // Basic auth header dengan encoding yang benar
     final auth = 'Basic ${base64Encode(utf8.encode('$_serverKey:'))}';
     
-    // Request body sesuai dokumentasi Midtrans
     final body = <String, dynamic>{
-      'payment_type': 'bank_transfer', // Default payment type
-      'transaction_details': {
-        'order_id': orderId,
-        'gross_amount': grossAmount.toInt(), // Midtrans expects integer
-      },
-    };
+    'payment_type': 'bank_transfer',
+    'transaction_details': {
+      'order_id': orderId,
+      'gross_amount': grossAmount.toInt(),
+    },
+    // Tambahkan customer details jika email tersedia
+    if (customerEmail != null) 'customer_details': {
+      'email': customerEmail,
+    },
+  };
 
     // Add specific payment method details
     if (paymentMethod != null) {
