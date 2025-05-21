@@ -119,7 +119,7 @@ class _SplashScreenState extends State<SplashScreen>
     
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 4),
+      duration: const Duration(seconds: 3),
     );
 
     // Logo scale animation (grows then settles)
@@ -162,12 +162,12 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    Timer(const Duration(seconds: 4), () {
+    Timer(const Duration(seconds: 3), () {
       setState(() {
         _showSecondSplash = true;
       });
       
-      Timer(const Duration(seconds: 8), () {
+      Timer(const Duration(seconds: 5), () {
         Navigator.pushReplacementNamed(context, '/home');
       });
     });
