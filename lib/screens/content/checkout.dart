@@ -228,6 +228,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
             city: response['city'] as String,
             district: response['district'] as String,
             village: response['village'] as String,
+            provinceId: response['province_id'] as String,
+            cityId: response['city_id'] as String,
+            districtId: response['district_id'] as String,
+            villageId: response['village_id'] as String,
             postalCode: response['postal_code'] as String,
             streetAddress: response['street_address'] as String,
             isPrimary: response['is_primary'] as bool,
@@ -301,6 +305,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
             'product_id': item.product_id,
             'quantity': item.count,
             'price': double.tryParse(item.price) ?? 0,
+          });
+
+          await supabase.from('stok_keluar').insert({
+            'product_id': item.product_id,
+            'brg_keluar': item.count,
+            'user_id': userId,
           });
 
           await _updateProductInventory(item);
@@ -2342,6 +2352,10 @@ class AddressData {
   final String city;
   final String district;
   final String village;
+  final String provinceId;
+  final String cityId;
+  final String districtId;
+  final String villageId;
   final String postalCode;
   final String streetAddress;
   final bool isPrimary;
@@ -2354,6 +2368,10 @@ class AddressData {
     required this.city,
     required this.district,
     required this.village,
+    required this.provinceId,
+    required this.cityId,
+    required this.districtId,
+    required this.villageId,
     required this.postalCode,
     required this.streetAddress,
     required this.isPrimary,

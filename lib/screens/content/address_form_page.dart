@@ -283,18 +283,23 @@ if (currentAddress != fullAddress) {
         throw Exception('User not logged in');
       }
 
-      final addressData = {
-        'user_id': userId,
-        'recipient_name': _nameController.text,
-        'phone_number': _phoneController.text,
-        'province': _selectedProvince,
-        'city': _selectedCity,
-        'district': _selectedDistrict,
-        'village': _selectedVillage,
-        'postal_code': _postalCodeController.text,
-        'street_address': _streetController.text,
-        'is_primary': widget.initialAddress?.isPrimary ?? false,
-      };
+     // In the _saveAddress method, change the addressData mapping to:
+    final addressData = {
+      'user_id': userId,
+      'recipient_name': _nameController.text,
+      'phone_number': _phoneController.text,
+      'province': _selectedProvince,
+      'city': _selectedCity,
+      'district': _selectedDistrict,
+      'village': _selectedVillage,
+      'postal_code': _postalCodeController.text,
+      'province_id': _selectedProvinceId,  // Changed to use ID
+      'city_id': _selectedCityId,          // Changed to use ID
+      'district_id': _selectedDistrictId,  // Changed to use ID
+      'village_id': _selectedVillageId,    // Changed to use ID
+      'street_address': _streetController.text,
+      'is_primary': widget.initialAddress?.isPrimary ?? false,
+    };
 
       if (widget.initialAddress == null) {
         await _supabase.from('addresses').insert(addressData);

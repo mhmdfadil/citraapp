@@ -81,7 +81,8 @@ class _LoginPageState extends State<LoginPage> {
     final overlay = Overlay.of(context);
     final overlayEntry = OverlayEntry(
       builder: (context) => Positioned(
-        top: 42,
+        top: MediaQuery.of(context).padding.top + 10,
+        left: 10,
         right: 10,
         child: Material(
           color: Colors.transparent,
@@ -104,9 +105,16 @@ class _LoginPageState extends State<LoginPage> {
                 Icon(isSuccess ? Icons.check_circle : Icons.error, 
                     color: isSuccess ? Colors.green : Colors.red),
                 SizedBox(width: 8),
-                Text(
-                  message,
-                  style: TextStyle(color: isSuccess ? Colors.green : Colors.red),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: TextStyle(
+                      color: isSuccess ? Colors.green : Colors.red,
+                      fontSize: 14,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -213,12 +221,18 @@ class _LoginPageState extends State<LoginPage> {
       );
     }
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
-      body: Center(
+      body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24),
+            padding: EdgeInsets.symmetric(
+              horizontal: screenWidth * 0.05,
+              vertical: screenHeight * 0.02,
+            ),
             child: Form(
               key: _formKey,
               child: Column(
@@ -226,66 +240,92 @@ class _LoginPageState extends State<LoginPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Center(
-                    child: Image.asset('assets/images/logo.png', width: 350, height: 280),
+                    child: Image.asset(
+                      'assets/images/logo.png',
+                      width: screenWidth * 0.8,
+                      height: screenHeight * 0.3,
+                      fit: BoxFit.contain,
+                    ),
                   ),
-                  SizedBox(height: 30),
+                  SizedBox(height: screenHeight * 0.02),
                   Text(
                     'Login',
                     style: TextStyle(
-                      fontSize: 23,
+                      fontSize: screenWidth * 0.06,
                       color: Colors.blue[600],
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 3),
+                  SizedBox(height: screenHeight * 0.005),
                   Text(
                     'Please Sign in to continue',
-                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                    style: TextStyle(
+                      fontSize: screenWidth * 0.04,
+                      color: Colors.grey[600],
+                    ),
                   ),
-                  SizedBox(height: 20),
+                  SizedBox(height: screenHeight * 0.03),
                   TextFormField(
                     controller: _usernameController,
-                    style: TextStyle(fontSize: 16, color: Colors.black),
+                    style: TextStyle(
+                      fontSize: screenWidth * 0.04,
+                      color: Colors.black,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'Username',
                       prefixIcon: Icon(Icons.person, color: Colors.black),
                       filled: true,
                       fillColor: Color(0xFFD9D9D9),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(25)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(screenWidth * 0.1),
+                      ),
                       focusedBorder: OutlineInputBorder(
                         borderSide: BorderSide(color: Colors.blue, width: 2),
-                        borderRadius: BorderRadius.circular(25),
+                        borderRadius: BorderRadius.circular(screenWidth * 0.1),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderSide: BorderSide(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(25),
+                        borderRadius: BorderRadius.circular(screenWidth * 0.1),
+                      ),
+                      contentPadding: EdgeInsets.symmetric(
+                        vertical: screenHeight * 0.02,
+                        horizontal: screenWidth * 0.05,
                       ),
                     ),
                     validator: (value) => value!.isEmpty ? 'Username cannot be empty' : null,
                   ),
-                  SizedBox(height: 16),
+                  SizedBox(height: screenHeight * 0.02),
                   TextFormField(
                     controller: _passwordController,
-                    style: TextStyle(fontSize: 16, color: Colors.black),
+                    style: TextStyle(
+                      fontSize: screenWidth * 0.04,
+                      color: Colors.black,
+                    ),
                     obscureText: true,
                     decoration: InputDecoration(
                       labelText: 'Password',
                       prefixIcon: Icon(Icons.lock, color: Colors.black),
                       filled: true,
                       fillColor: Color(0xFFD9D9D9),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(25)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(screenWidth * 0.1),
+                      ),
                       focusedBorder: OutlineInputBorder(
                         borderSide: BorderSide(color: Colors.blue, width: 2),
-                        borderRadius: BorderRadius.circular(25),
+                        borderRadius: BorderRadius.circular(screenWidth * 0.1),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderSide: BorderSide(color: Colors.grey),
-                        borderRadius: BorderRadius.circular(25),
+                        borderRadius: BorderRadius.circular(screenWidth * 0.1),
+                      ),
+                      contentPadding: EdgeInsets.symmetric(
+                        vertical: screenHeight * 0.02,
+                        horizontal: screenWidth * 0.05,
                       ),
                     ),
                     validator: (value) => value!.isEmpty ? 'Password cannot be empty' : null,
                   ),
-                  SizedBox(height: 38),
+                  SizedBox(height: screenHeight * 0.05),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -293,30 +333,47 @@ class _LoginPageState extends State<LoginPage> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Color(0xFFF273F0),
                         foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(vertical: 14),
+                        padding: EdgeInsets.symmetric(
+                          vertical: screenHeight * 0.02,
+                        ),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(25),
+                          borderRadius: BorderRadius.circular(screenWidth * 0.1),
                         ),
                       ),
                       child: _isLoading 
-                          ? CircularProgressIndicator(color: Colors.white)
-                          : Text('Login', style: TextStyle(fontSize: 16)),
+                          ? SizedBox(
+                              width: screenWidth * 0.05,
+                              height: screenWidth * 0.05,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 3,
+                              ),
+                            )
+                          : Text(
+                              'Login',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.045,
+                              ),
+                            ),
                     ),
                   ),
-                  SizedBox(height: 8),
+                  SizedBox(height: screenHeight * 0.02),
                   Center(
                     child: GestureDetector(
                       onTap: _isLoading ? null : () => _navigateToRegister(context),
                       child: Text.rich(
                         TextSpan(
                           text: 'Don\'t have an account? ',
-                          style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: screenWidth * 0.035,
+                          ),
                           children: [
                             TextSpan(
                               text: 'Sign Up',
                               style: TextStyle(
                                 color: Colors.black,
-                                fontSize: 16,
+                                fontSize: screenWidth * 0.035,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
