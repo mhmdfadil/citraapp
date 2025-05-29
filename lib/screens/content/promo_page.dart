@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
 import 'package:citraapp/screens/content/promo_detail_page.dart'; 
 import 'package:citraapp/login.dart';
+import 'package:citraapp/screens/user_screen.dart';
 import 'dart:convert';
 import 'package:intl/intl.dart';
 
@@ -400,101 +401,115 @@ class _PromoPageState extends State<PromoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Promo Hari Ini'),
-        centerTitle: true,
-        backgroundColor: const Color(0xFFF273F0),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
-            bottom: Radius.circular(20),
+    return WillPopScope(
+      onWillPop: () async {
+        // Disable back button functionality
+        return false;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Promo Hari Ini'),
+          centerTitle: true,
+          backgroundColor: const Color(0xFFF273F0),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(
+              bottom: Radius.circular(20),
+            ),
+          ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (context) => UserScreen()),
+              );
+            },
           ),
         ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFF273F0)))
-          : _products.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFFF273F0)))
+            : _products.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.discount_outlined,
+                          size: 60,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Tidak ada promo saat ini',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Cek kembali di lain waktu untuk promo menarik',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Column(
                     children: [
-                      Icon(
-                        Icons.discount_outlined,
-                        size: 60,
-                        color: Colors.grey.shade400,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Tidak ada promo saat ini',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Colors.grey.shade600,
+                      // Sort Chips
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.1),
+                              blurRadius: 3,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 16),
+                              _buildSortChip('Terbaru'),
+                              const SizedBox(width: 8),
+                              _buildSortChip('Tertinggi'),
+                              const SizedBox(width: 8),
+                              _buildSortChip('Terendah'),
+                              const SizedBox(width: 16),
+                            ],
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Cek kembali di lain waktu untuk promo menarik',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade500,
+                      
+                      // Product Grid
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: GridView.builder(
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                              childAspectRatio: 0.75, // Adjusted for better proportions
+                            ),
+                            itemCount: _products.length,
+                            itemBuilder: (context, index) {
+                              return _buildProductCard(_products[index]);
+                            },
+                          ),
                         ),
                       ),
                     ],
                   ),
-                )
-              : Column(
-                  children: [
-                    // Sort Chips
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
-                            blurRadius: 3,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 16),
-                            _buildSortChip('Terbaru'),
-                            const SizedBox(width: 8),
-                            _buildSortChip('Tertinggi'),
-                            const SizedBox(width: 8),
-                            _buildSortChip('Terendah'),
-                            const SizedBox(width: 16),
-                          ],
-                        ),
-                      ),
-                    ),
-                    
-                    // Product Grid
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: GridView.builder(
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            childAspectRatio: 0.75, // Adjusted for better proportions
-                          ),
-                          itemCount: _products.length,
-                          itemBuilder: (context, index) {
-                            return _buildProductCard(_products[index]);
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+      ),
     );
   }
 }
