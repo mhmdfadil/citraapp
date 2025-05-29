@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'package:citraapp/screens/content/chat.dart';
 import 'package:citraapp/screens/content/cartItem.dart';
+import 'package:citraapp/screens/content/product_detail_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import '/screens/content/product_detail_page.dart';
+import 'package:citraapp/screens/content/card_product.dart';
 import '/screens/content/address_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -1967,8 +1968,9 @@ Card(
       children: [
         // Show all products in cart
         ...widget.cartItems.map((item) {
-          final price = double.tryParse(item.price) ?? 0;
-          final itemTotal = price * item.quantity;
+          final prices = double.tryParse(item.price) ?? 0;
+          final itemTotal = prices * item.quantity;
+       
           
           return InkWell(
             onTap: () {
@@ -2042,9 +2044,9 @@ Card(
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Rp ${price.toStringAsFixed(0).replaceAllMapped(
-                              RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                              (Match m) => '${m[1]}.',
+                            'Rp ${widget.totalPrice.toStringAsFixed(0).replaceAllMapped(
+                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                                (Match m) => '${m[1]}.',
                             )}',
                             style: const TextStyle(
                               color: Color(0xFFFF1E00),
@@ -2054,10 +2056,10 @@ Card(
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Total: Rp ${itemTotal.toStringAsFixed(0).replaceAllMapped(
-                              RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                              (Match m) => '${m[1]}.',
-                            )}',
+                           'Rp ${widget.totalPrice.toStringAsFixed(0).replaceAllMapped(
+                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                                (Match m) => '${m[1]}.',
+                              )}',
                             style: const TextStyle(
                               fontWeight: FontWeight.w500,
                               fontSize: 15,

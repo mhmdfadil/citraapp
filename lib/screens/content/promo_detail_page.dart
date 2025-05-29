@@ -7,21 +7,22 @@ import 'package:citraapp/screens/content/co_buy.dart';
 import 'package:citraapp/screens/content/card_product.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:citraapp/login.dart';
+import 'package:intl/intl.dart';
 
 
-
-class ProductDetailPage extends StatefulWidget {
+class PromoDetailPage extends StatefulWidget {
   final String productId;
 
-  const ProductDetailPage({Key? key, required this.productId}) : super(key: key);
+  const PromoDetailPage({Key? key, required this.productId}) : super(key: key);
 
   @override
-  _ProductDetailPageState createState() => _ProductDetailPageState();
+  _PromoDetailPageState createState() => _PromoDetailPageState();
 }
 
-class _ProductDetailPageState extends State<ProductDetailPage> {
+class _PromoDetailPageState extends State<PromoDetailPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   Map<String, dynamic>? _product;
+  Map<String, dynamic>? _promo;
   bool _isLoading = true;
   bool _isFavorite = false;
   int _cartItemCount = 0;
@@ -30,12 +31,14 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   bool _showFullImage = false;
   int _currentImageIndex = 0;
   List<Map<String, dynamic>> _photoItems = [];
-   String _categoryName = ''; // Added to store category name
+  String _categoryName = '';
+  DateTime _now = DateTime.now();
+  
 
   @override
   void initState() {
     super.initState();
-    _fetchProduct();
+    _fetchProductAndPromo();
     _fetchCartCount();
     _checkFavoriteStatus();
     _fetchPhotoItems();
@@ -57,10 +60,15 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     }
   }
 
-  Future<void> _fetchProduct() async {
+  Future<void> _fetchProductAndPromo() async {
     try {
-      // Modified query to join with categories table
-      final response = await _supabase
+      setState(() => _isLoading = true);
+      
+      // Format current date for query
+      final nowStr = DateFormat('yyyy-MM-dd HH:mm:ss').format(_now);
+
+      // Fetch product with category info
+      final productResponse = await _supabase
           .from('products')
           .select('''
             *, 
@@ -69,23 +77,33 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
           .eq('id', widget.productId)
           .maybeSingle();
 
-      if (response != null) {
-        setState(() {
-          _product = response;
-          _availableStock = response['stock'] ?? 0;
-          // Get category name from the joined table
-          _categoryName = (response['categories'] as Map<String, dynamic>?)?['name'] ?? '';
-        });
-      } else {
+      if (productResponse == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Produk tidak ditemukan')),
           );
           Navigator.pop(context);
         }
+        return;
       }
+
+      // Fetch active promo for this product
+      final promoResponse = await _supabase
+          .from('promos')
+          .select()
+          .eq('product_id', widget.productId)
+          .lte('start_date', nowStr)
+          .gte('end_date', nowStr)
+          .maybeSingle();
+
+      setState(() {
+        _product = productResponse;
+        _promo = promoResponse;
+        _availableStock = productResponse['stock'] ?? 0;
+        _categoryName = (productResponse['categories'] as Map<String, dynamic>?)?['name'] ?? '';
+      });
     } catch (e) {
-      print('Error fetching product: $e');
+      print('Error fetching product and promo: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Gagal memuat produk')),
@@ -191,26 +209,26 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   }
 
   String _formatSoldCount(int sold) {
-  if (sold < 1000) {
-    return sold.toString();
-  } else if (sold < 10000) {
-    double thousands = sold / 1000;
-    return thousands.toStringAsFixed(thousands % 1 == 0 ? 0 : 1) + ' K+';
-  } else if (sold < 1000000) {
-    double thousands = sold / 1000;
-    return thousands.toStringAsFixed(thousands % 1 == 0 ? 0 : 1) + ' K+';
-  } else {
-    double millions = sold / 1000000;
-    return millions.toStringAsFixed(millions % 1 == 0 ? 0 : 1) + ' JT+';
+    if (sold < 1000) {
+      return sold.toString();
+    } else if (sold < 10000) {
+      double thousands = sold / 1000;
+      return thousands.toStringAsFixed(thousands % 1 == 0 ? 0 : 1) + 'rb';
+    } else if (sold < 1000000) {
+      double thousands = sold / 1000;
+      return thousands.toStringAsFixed(thousands % 1 == 0 ? 0 : 1) + 'rb';
+    } else {
+      double millions = sold / 1000000;
+      return millions.toStringAsFixed(millions % 1 == 0 ? 0 : 1) + 'jt';
+    }
   }
-}
 
-String _formatPrice(int price) {
-  return price.toString().replaceAllMapped(
-    RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-    (Match m) => '${m[1]}.',
-  );
-}
+  String _formatPrice(int price) {
+    return price.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]}.',
+    );
+  }
 
   Future<void> _addToCart() async {
     try {
@@ -282,60 +300,60 @@ String _formatPrice(int price) {
     }
   }
 
-  void _buyNow() {
-    if (_product == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Produk tidak tersedia')),
-        );
-      }
-      return;
-    }
-    
-    if (_availableStock <= 0) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Stok produk habis')),
-        );
-      }
-      return;
-    }
-
-    final price = double.tryParse(_product!['price_display']?.toString().replaceAll('.', '') ?? '0') ?? 0;
-    final quantity = 1;
-    final totalPrice = price * quantity;
-    final totalCount = quantity;
-
-    // Use the first photo as the imageUrl
-    final imageUrl = _photoItems.isNotEmpty 
-        ? _supabase.storage.from('picture-products').getPublicUrl(_photoItems[0]['name'])
-        : '';
-
-    final cardproduct = CardProduct(
-      id: DateTime.now().millisecondsSinceEpoch,
-      product_id: int.tryParse(widget.productId) ?? 0,
-      category: _categoryName,
-      name: _product!['name']?.toString() ?? 'No Name',
-      price: _product!['price_display']?.toString() ?? '0',
-      imageUrl: imageUrl,
-      quantity: quantity,
-      isSelected: true,
-      stock: _availableStock,
-    );
-
+ void _buyNow() {
+  if (_product == null) {
     if (mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => COBuyPage(
-            cartItems: [cardproduct],
-            totalItems: totalCount,
-            totalPrice: totalPrice,
-          ),
-        ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Produk tidak tersedia')),
       );
     }
+    return;
   }
+  
+  if (_availableStock <= 0) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Stok produk habis')),
+      );
+    }
+    return;
+  }
+
+  // Convert prices to double to ensure type compatibility
+  final price = (_promo != null ? _promo!['price_display'] : _product!['price_display']).toDouble();
+  final quantity = 1;
+  final totalPrice = price * quantity;
+  final totalCount = quantity;
+
+  final imageUrl = _photoItems.isNotEmpty 
+      ? _supabase.storage.from('picture-products').getPublicUrl(_photoItems[0]['name'])
+      : '';
+
+  final cardproduct = CardProduct(
+    id: DateTime.now().millisecondsSinceEpoch,
+    product_id: int.tryParse(widget.productId) ?? 0,
+    category: _categoryName,
+    name: _product!['name']?.toString() ?? 'No Name',
+    price: _product!['price_display']?.toString() ?? '0',
+    imageUrl: imageUrl,
+    quantity: quantity,
+    isSelected: true,
+    stock: _availableStock,
+  );
+
+  if (mounted) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => COBuyPage(
+          cartItems: [cardproduct],
+          totalItems: totalCount,
+          totalPrice: totalPrice,
+        ),
+      ),
+    );
+  }
+}
 
   void _showImagePreview(int index) {
     setState(() {
@@ -366,7 +384,6 @@ String _formatPrice(int price) {
 
     return Column(
       children: [
-        // Main image display
         GestureDetector(
           onTap: () => _showImagePreview(_currentImageIndex),
           child: SizedBox(
@@ -394,59 +411,59 @@ String _formatPrice(int price) {
           ),
         ),
         
-      if (_photoItems.length > 1)
-  Container(
-    height: 70,  // Tinggi sedikit ditambah
-    padding: const EdgeInsets.symmetric(vertical: 10),
-    child: Center(
-      child: ListView.builder(
-        shrinkWrap: true,
-        scrollDirection: Axis.horizontal,
-        itemCount: _photoItems.length,
-        itemBuilder: (context, index) {
-          return GestureDetector(
-            onTap: () => _changeImage(index),
-            child: Container(
-              width: 50,  // Lebar thumbnail ditambah
-              margin: const EdgeInsets.symmetric(horizontal: 5),  // Jarak antar thumbnail diperbesar
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.3),  // Background semi-transparan
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: _currentImageIndex == index 
-                      ? const Color(0xFFF273F0)  // Pink saat aktif
-                      : Colors.grey.shade300,   // Abu-abu saat tidak aktif
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(4),  // Padding dalam thumbnail
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Image.network(
-                    _supabase.storage.from('picture-products').getPublicUrl(_photoItems[index]['name']),
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => 
-                      Image.asset(
-                        'assets/images/placeholder.png',
-                        fit: BoxFit.cover,
+        if (_photoItems.length > 1)
+          Container(
+            height: 70,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Center(
+              child: ListView.builder(
+                shrinkWrap: true,
+                scrollDirection: Axis.horizontal,
+                itemCount: _photoItems.length,
+                itemBuilder: (context, index) {
+                  return GestureDetector(
+                    onTap: () => _changeImage(index),
+                    child: Container(
+                      width: 50,
+                      margin: const EdgeInsets.symmetric(horizontal: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _currentImageIndex == index 
+                              ? const Color(0xFFF273F0)
+                              : Colors.grey.shade300,
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                  ),
-                ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.network(
+                            _supabase.storage.from('picture-products').getPublicUrl(_photoItems[index]['name']),
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => 
+                              Image.asset(
+                                'assets/images/placeholder.png',
+                                fit: BoxFit.cover,
+                              ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-          );
-        },
-      ),
-    ),
-  ),
+          ),
       ],
     );
   }
@@ -456,12 +473,10 @@ String _formatPrice(int price) {
       onTap: _hideImagePreview,
       onHorizontalDragEnd: (details) {
         if (details.primaryVelocity! > 0) {
-          // Swipe right to left (next)
           if (_currentImageIndex > 0) {
             _changeImage(_currentImageIndex - 1);
           }
         } else if (details.primaryVelocity! < 0) {
-          // Swipe left to right (previous)
           if (_currentImageIndex < _photoItems.length - 1) {
             _changeImage(_currentImageIndex + 1);
           }
@@ -557,6 +572,18 @@ String _formatPrice(int price) {
         ),
         body: const Center(child: Text('Produk tidak ditemukan')),
       );
+    }
+
+    final hasPromo = _promo != null;
+    final originalPrice = hasPromo ? _promo!['price_ori'] : _product!['price_display'];
+    final promoPrice = hasPromo ? _promo!['price_display'] : _product!['price_display'];
+    final discountPercent = hasPromo ? _promo!['diskon'] : null;
+
+    String promoPeriod = '';
+    if (hasPromo) {
+      final startDate = DateTime.parse(_promo!['start_date']).toLocal();
+      final endDate = DateTime.parse(_promo!['end_date']).toLocal();
+      promoPeriod = '${DateFormat('dd MMM').format(startDate)}-${DateFormat('dd MMM yyyy').format(endDate)}';
     }
 
     return Scaffold(
@@ -678,6 +705,24 @@ String _formatPrice(int price) {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (hasPromo)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'PROMO',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      
                       Text(
                         _product!['name']?.toString() ?? 'No Name',
                         style: const TextStyle(
@@ -686,24 +731,49 @@ String _formatPrice(int price) {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      if (_product!['price_ori'] != null && (_product!['price_ori'] as num) > (_product!['price_display'] as num))
+                      
+                      if (hasPromo && originalPrice != promoPrice)
                         Text(
-                          'Rp ${_formatPrice(_product!['price_ori'])}',
+                          'Rp ${_formatPrice(originalPrice)}',
                           style: const TextStyle(
                             decoration: TextDecoration.lineThrough,
                             color: Colors.grey,
                           ),
                         ),
+                      
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Rp ${_formatPrice(_product!['price_display'])}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFFF273F0),
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                'Rp ${_formatPrice(promoPrice)}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFFF273F0),
+                                ),
+                              ),
+                              if (hasPromo && discountPercent != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 8),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '${discountPercent}%',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.red.shade700,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                           Row(
                             children: [
@@ -741,6 +811,24 @@ String _formatPrice(int price) {
                           ),
                         ],
                       ),
+                      
+                      if (hasPromo) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(Icons.timer_outlined, size: 14, color: Colors.green.shade600),
+                            const SizedBox(width: 4),
+                            Text(
+                              promoPeriod,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      
                       const SizedBox(height: 8),
                       Text(
                         'Stok: $_availableStock',
