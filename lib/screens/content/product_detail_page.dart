@@ -759,6 +759,12 @@ String _formatPrice(int price) {
                         ),
                       ),
                       const SizedBox(height: 8),
+                          Text(
+                            'Berat : ${_product!['weight']?.toString() ?? '0'} gram',
+                            style: const TextStyle(fontSize: 14),
+                          ),
+
+                      const SizedBox(height: 8),
                       Text(
                         _product!['desc']?.toString() ?? 'Tidak ada deskripsi',
                         style: const TextStyle(fontSize: 14),

@@ -651,7 +651,7 @@ class _InvoicePaymentPageState extends State<InvoicePaymentPage> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '${item['quantity']} × ${currencyFormat.format(product['price_display'] ?? 0)}',
+                              '${item['quantity']} × ${currencyFormat.format(item['price']  ?? 0)}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey.shade600,

@@ -1,7 +1,7 @@
 import 'dart:core';
 import 'dart:typed_data';
 import 'dart:io';
-
+import 'package:citraapp/screens/content/resi_cek.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -11,6 +11,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:open_file/open_file.dart';
+import 'package:iconsax/iconsax.dart';
 
 class InvoicePage extends StatefulWidget {
   final String orderId;
@@ -542,62 +543,117 @@ Future<pw.Document> _generatePdfDocument(Map<String, dynamic> data) async {
 
                 pw.SizedBox(height: 16),
 
-                // Payment method and status
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColors.white,
-                    borderRadius: pw.BorderRadius.circular(10),
-                  ),
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Metode Pembayaran:',
-                            style: pw.TextStyle(
-                              fontWeight: pw.FontWeight.bold,
-                              fontSize: 10,
-                            ),
-                          ),
-                          pw.SizedBox(height: 6),
-                          pw.Text(
-                            order['payment_method'] ?? 'Tidak diketahui',
-                            style: pw.TextStyle(fontSize: 10)),
-                        ],
-                      ),
-                      pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.end,
-                        children: [
-                          pw.Text(
-                            'Status Pembayaran:',
-                            style: pw.TextStyle(
-                              fontWeight: pw.FontWeight.bold,
-                              fontSize: 10,
-                            ),
-                          ),
-                          pw.SizedBox(height: 6),
-                          pw.Container(
-                            padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                         child: pw.Align(
-                            alignment: pw.Alignment.centerLeft,
-                            child: pw.Text(
-                              paymentStatus,
-                              style: pw.TextStyle(
-                                color: PdfColor.fromInt(statusColor.value),
-                                fontWeight: pw.FontWeight.bold,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+              // Payment method and status
+pw.Container(
+  padding: const pw.EdgeInsets.all(12),
+  decoration: pw.BoxDecoration(
+    color: PdfColors.white,
+    borderRadius: pw.BorderRadius.circular(10),
+  ),
+  child: pw.Row(
+    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Metode Pembayaran:',
+            style: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              fontSize: 10,
+            ),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            order['payment_method'] ?? 'Tidak diketahui',
+            style: pw.TextStyle(fontSize: 10),
+          ),
+        ],
+      ),
+      pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.end,
+        children: [
+          pw.Text(
+            'Status Pembayaran:',
+            style: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              fontSize: 10,
+            ),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey100,
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
+            child: pw.Text(
+              paymentStatus,
+              style: pw.TextStyle(
+                color: PdfColor.fromInt(statusColor.value),
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 10,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ],
+  ),
+),
+pw.Container(
+  padding: const pw.EdgeInsets.all(12),
+  decoration: pw.BoxDecoration(
+    color: PdfColors.white,
+    borderRadius: pw.BorderRadius.circular(10),
+  ),
+  child: pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.Row(
+        children: [
+          pw.Text(
+            'Kurir:',
+            style: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              fontSize: 10,
+            ),
+          ),
+          pw.SizedBox(width: 8),
+          pw.Text(
+            (order['shipping_method']?.toString().toUpperCase() ?? 'Belum tersedia'),
+            style: pw.TextStyle(fontSize: 10),
+          ),
+        ],
+      ),
+      pw.SizedBox(height: 8),
+      pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Nomor Resi:',
+            style: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              fontSize: 10,
+            ),
+          ),
+          pw.SizedBox(width: 8),
+          pw.Expanded(
+            child: pw.Text(
+              (order['resi'] != null && order['resi'].toString().trim().isNotEmpty)
+                  ? order['resi']
+                  : 'Belum tersedia',
+              style: pw.TextStyle(fontSize: 10),
+            ),
+          ),
+        ],
+      ),
+    ],
+  ),
+),
+
+
 
                 pw.SizedBox(height: 16),
                 pw.Center(
@@ -714,6 +770,12 @@ Future<pw.Document> _generatePdfDocument(Map<String, dynamic> data) async {
             color: Colors.white,
           ),
         ),
+         leading: IconButton(
+    icon: const Icon(Icons.arrow_back, color: Colors.white),
+    onPressed: () {
+      Navigator.of(context).pop();
+    },
+  ),
         centerTitle: false,
         backgroundColor: const Color(0xFF87CEEB),
         elevation: 0,
@@ -1227,7 +1289,97 @@ Future<pw.Document> _generatePdfDocument(Map<String, dynamic> data) async {
                                   ),
                                 ),
 
-                                const SizedBox(height: 16),
+                                // Add shipping info section
+const SizedBox(height: 16),
+Container(
+  padding: const EdgeInsets.all(12),
+  decoration: BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(10),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.blue.shade100,
+        blurRadius: 4,
+        offset: const Offset(0, 2),
+      ),
+    ],
+  ),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Informasi Pengiriman',
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          const Text(
+            'Kurir:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            (order['shipping_method']?.toString().toUpperCase() ?? 'Belum tersedia'),
+            style: const TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          const Text(
+            'Nomor Resi:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            (order['resi']?.toString() ?? 'Belum tersedia'),
+            style: const TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
+       const SizedBox(height: 16),
+        // Add tracking button if both resi and shipping method exist
+        if (order['resi'] != null && order['shipping_method'] != null)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => CekResiContent(
+                      awb: order['resi'],
+                      courier: order['shipping_method'],
+                    ),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue[600],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Iconsax.truck, size: 18),
+                  SizedBox(width: 8),
+                  Text('Lacak Pengiriman'),
+                ],
+              ),
+            ),
+          ),
+    ],
+  ),
+  
+),
+
+ const SizedBox(height: 16),
                                 Center(
                                   child: Text(
                                     'Invoice diunduh pada ${DateFormat('dd MMMM yyyy HH:mm', 'id_ID').format(DateTime.now())}',

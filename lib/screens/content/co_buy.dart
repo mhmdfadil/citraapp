@@ -10,6 +10,7 @@ import 'package:citraapp/screens/content/card_product.dart';
 import '/screens/content/address_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:citraapp/utils/rajaongkir.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -48,14 +49,33 @@ class _COBuyPageState extends State<COBuyPage> {
   bool isPaymentCompleted = false;
   RealtimeSubscription? paymentStatusSubscription;
 
-  @override
-  void initState() {
-    super.initState();
-    shippingCost = 40000;
-    finalTotal = widget.totalPrice + shippingCost + 5000 - 40000;
-    _loadPrimaryAddress();
-    _loadPaymentMethods();
-  }
+   // Variabel baru untuk shipping
+  String? _selectedCourier = 'jne';
+  List<Map<String, dynamic>> _availableShippingServices = [];
+  bool _isLoadingShipping = false;
+  int _totalWeight = 0;
+  Timer? _shippingTimer;
+
+// Update your initState to calculate shipping cost
+@override
+void initState() {
+  super.initState();
+  shippingCost = 0; // Initialize to 0
+  finalTotal = widget.totalPrice + shippingCost + 5000 - 40000;
+  _loadPrimaryAddress();
+  _loadPaymentMethods();
+  
+  _calculateTotalWeight().then((totalWeight) {
+    if (mounted) {
+      setState(() {
+        _totalWeight = totalWeight;
+      });
+      if (selectedAddress != null) {
+        _fetchShippingCost();
+      }
+    }
+  });
+}
 
   @override
   void dispose() {
@@ -63,6 +83,178 @@ class _COBuyPageState extends State<COBuyPage> {
      paymentTimer?.cancel();
     super.dispose();
   }
+
+ Future<int> _calculateTotalWeight() async {
+  int totalWeight = 0;
+  for (final item in widget.cartItems) {
+    final productResponse = await supabase
+        .from('products')
+        .select('weight')
+        .eq('id', item.product_id)
+        .single();
+
+    final productWeight = productResponse['weight'] as int;
+    totalWeight += productWeight * item.quantity;
+  }
+  return totalWeight;
+}
+
+Future<void> _fetchShippingCost() async {
+  if (selectedAddress == null || _totalWeight == 0 || _selectedCourier == null) {
+    setState(() {
+      shippingCost = 0;
+      _updateFinalTotal();
+    });
+    return;
+  }
+
+  setState(() => _isLoadingShipping = true);
+
+  try {
+    final result = await RajaOngkirService.getShippingCost(
+      origin: '1107',
+      destination: selectedAddress!.cityId,
+      weight: _totalWeight,
+      courier: _selectedCourier!,
+    );
+
+    if (result['costs'] != null && result['costs'].isNotEmpty) {
+      setState(() {
+        shippingCost = (result['costs'][0]['cost'][0]['value'] as int).toDouble();
+        _updateFinalTotal();
+      });
+    } else {
+      setState(() {
+        shippingCost = 0;
+        _updateFinalTotal();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Layanan pengiriman ${_selectedCourier!.toUpperCase()} tidak tersedia untuk rute ini')),
+      );
+    }
+  } catch (e) {
+    debugPrint('Error fetching shipping cost: $e');
+    setState(() {
+      shippingCost = 0;
+      _updateFinalTotal();
+    });
+    
+    // Only show error if it's not a 404 (which we handle gracefully)
+    if (!e.toString().contains('404')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal mendapatkan ongkos kirim: ${e.toString().replaceAll("Exception: ", "")}')),
+      );
+    }
+  } finally {
+    if (mounted) {
+      setState(() => _isLoadingShipping = false);
+    }
+  }
+}
+void _updateFinalTotal() {
+  if (mounted) {
+    setState(() {
+      // Calculate the actual discount (minimum between shipping cost and 40,000)
+      double actualDiscount = shippingCost > 40000 ? 40000 : shippingCost;
+      finalTotal = widget.totalPrice + shippingCost + 5000 - actualDiscount;
+    });
+  }
+}
+
+void _showShippingOptions() {
+  if (selectedAddress == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Silakan pilih alamat pengiriman terlebih dahulu')),
+    );
+    return;
+  }
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Pilih Kurir dan Layanan',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: _selectedCourier,
+                  items: ['jne', 'jnt'].map((courier) {
+                    return DropdownMenuItem<String>(
+                      value: courier,
+                      child: Text(courier.toUpperCase()),
+                    );
+                  }).toList(),
+                  onChanged: (value) async {
+                    if (value != null) {
+                      setState(() => _selectedCourier = value);
+                      await _fetchShippingCost();
+                    }
+                  },
+                  decoration: InputDecoration(
+                    labelText: 'Kurir',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                SizedBox(height: 16),
+                if (_isLoadingShipping)
+                  Center(child: CircularProgressIndicator())
+                else if (_availableShippingServices.isEmpty)
+                  Text('Tidak ada layanan pengiriman tersedia'),
+                if (_availableShippingServices.isNotEmpty)
+                  Expanded(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _availableShippingServices.length,
+                      itemBuilder: (context, index) {
+                        final service = _availableShippingServices[index];
+                        final cost = service['cost'][0];
+                        return Card(
+                          child: ListTile(
+                            title: Text(service['service']),
+                            subtitle: Text('${cost['etd']} hari'),
+                            trailing: Text(
+                              'Rp ${NumberFormat('#,###').format(cost['value'])}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            onTap: () {
+                              setState(() {
+                                shippingCost = (cost['value'] as int).toDouble();
+                                _updateFinalTotal();
+                              });
+                              Navigator.pop(context);
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Tutup'),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
 
   Future<void> _setupPaymentStatusListener(String orderNumber) async {
   try {
@@ -204,44 +396,54 @@ class _COBuyPageState extends State<COBuyPage> {
     }
   }
 
-  Future<void> _loadPrimaryAddress() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getString('user_id');
+Future<void> _loadPrimaryAddress() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('user_id');
+    
+    if (userId == null) return;
+
+    final response = await supabase
+        .from('addresses')
+        .select()
+        .eq('user_id', userId)
+        .eq('is_primary', true)
+        .maybeSingle();
+
+    if (response != null) {
+      setState(() {
+        selectedAddress = AddressData(
+          id: response['id'] as int,
+          recipientName: response['recipient_name'] as String,
+          phoneNumber: response['phone_number'] as String,
+          province: response['province'] as String,
+          city: response['city'] as String,
+          district: response['district'] as String,
+          village: response['village'] as String,
+          provinceId: response['province_id'] as String,
+          cityId: response['city_id'] as String,
+          districtId: response['district_id'] as String,
+          villageId: response['village_id'] as String,
+          postalCode: response['postal_code'] as String,
+          streetAddress: response['street_address'] as String,
+          isPrimary: response['is_primary'] as bool,
+        );
+      });
       
-      if (userId == null) return;
-
-      final response = await supabase
-          .from('addresses')
-          .select()
-          .eq('user_id', userId)
-          .eq('is_primary', true)
-          .maybeSingle();
-
-      if (response != null) {
-        setState(() {
-          selectedAddress = AddressData(
-            id: response['id'] as int,
-            recipientName: response['recipient_name'] as String,
-            phoneNumber: response['phone_number'] as String,
-            province: response['province'] as String,
-            city: response['city'] as String,
-            district: response['district'] as String,
-            village: response['village'] as String,
-            provinceId: response['province_id'] as String,
-            cityId: response['city_id'] as String,
-            districtId: response['district_id'] as String,
-            villageId: response['village_id'] as String,
-            postalCode: response['postal_code'] as String,
-            streetAddress: response['street_address'] as String,
-            isPrimary: response['is_primary'] as bool,
-          );
-        });
+      // Jika berat sudah dihitung, fetch ongkir
+      if (_totalWeight > 0) {
+        _fetchShippingCost();
       }
-    } catch (e) {
-      debugPrint('Error loading primary address: $e');
+    } else {
+      debugPrint('No primary address found');
     }
+  } catch (e) {
+    debugPrint('Error loading primary address: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Gagal memuat alamat pengiriman')),
+    );
   }
+}
 
   Future<void> _selectAddress() async {
     final result = await Navigator.push(
@@ -314,8 +516,9 @@ class _COBuyPageState extends State<COBuyPage> {
             'order_number': orderNumber,
             'total_amount': finalTotal,
             'shipping_cost': shippingCost,
+            'shipping_method': _selectedCourier,
             'service_fee': 5000,
-            'discount': 40000,
+            'discount': shippingCost > 40000 ? 40000 : shippingCost,
             'payment_method': selectedPaymentMethod,
             'address_id': selectedAddress!.id,
             'created_at': DateTime.now().toIso8601String(), // Tambahkan ini
@@ -360,7 +563,7 @@ class _COBuyPageState extends State<COBuyPage> {
         if (selectedPaymentMethod == 'COD') {
           await supabase
               .from('orders')
-              .update({'status': ''})
+              .update({'status': 'pending'})
               .eq('id', orderId);
               
           _showOrderSuccess(context, orderNumber);
@@ -1840,6 +2043,65 @@ void _showPaymentSuccessDialog(BuildContext context, String orderNumber) {
       ),
     );
   }
+Widget _buildShippingOption(String label, String courier) {
+  final isSelected = _selectedCourier == courier;
+  final isAvailable = courier != 'sicepat'; // You might want to make this dynamic based on actual API availability
+
+  return Expanded(
+    child: InkWell(
+      onTap: isAvailable ? () {
+        setState(() {
+          _selectedCourier = courier;
+        });
+        _fetchShippingCost();
+      } : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected 
+              ? const Color(0xFFFF1E00) 
+              : isAvailable 
+                  ? Colors.grey[200] 
+                  : Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected 
+                ? const Color(0xFFFF1E00) 
+                : isAvailable 
+                    ? Colors.grey[300]! 
+                    : Colors.grey[200]!,
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected 
+                      ? Colors.white 
+                      : isAvailable 
+                          ? Colors.black 
+                          : Colors.grey,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              if (!isAvailable)
+                Text(
+                  '(Tidak tersedia)',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -1929,10 +2191,8 @@ void _showPaymentSuccessDialog(BuildContext context, String orderNumber) {
                                       const SizedBox(height: 4),
                                     if (selectedAddress != null)
                                       Text(
-                                        '${selectedAddress!.streetAddress}\n'
-                                        '${selectedAddress!.village}, ${selectedAddress!.district}, '
-                                        '${selectedAddress!.city}, ${selectedAddress!.province} '
-                                        '${selectedAddress!.postalCode}',
+                                        '${selectedAddress!.streetAddress}\n',
+                                      
                                         style: const TextStyle(
                                           color: Colors.black87,
                                           fontSize: 12,
@@ -1958,6 +2218,47 @@ void _showPaymentSuccessDialog(BuildContext context, String orderNumber) {
                     ),
 
                     const SizedBox(height: 16),
+                    // Add this widget above the Payment Details Card in your build method
+Card(
+  child: Padding(
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Pilih Pengiriman',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_isLoadingShipping)
+          const Center(child: CircularProgressIndicator())
+        else
+          Row(
+            children: [
+              _buildShippingOption('JNE', 'jne'),
+              const SizedBox(width: 8),
+              _buildShippingOption('JNT', 'jnt'),
+              const SizedBox(width: 8),
+              _buildShippingOption('SiCepat', 'sicepat'),
+            ],
+          ),
+        const SizedBox(height: 8),
+        if (_selectedCourier != null && shippingCost > 0)
+          Text(
+            'Estimasi: 3 hari',
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 12,
+            ),
+          ),
+      ],
+    ),
+  ),
+),
 
                                       // Product List - Updated version
 Card(
@@ -2162,64 +2463,55 @@ Card(
 
                     const SizedBox(height: 16),
 
-                    // Payment Details
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Rincian Pembayaran',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                                color: Colors.black,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            _buildPaymentRow(
-                              'Subtotal Untuk Produk',
-                              'Rp ${widget.totalPrice.toStringAsFixed(0).replaceAllMapped(
-                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                                (Match m) => '${m[1]}.',
-                              )}',
-                            ),
-                            _buildPaymentRow(
-                              'Subtotal Pengiriman',
-                              'Rp ${shippingCost.toStringAsFixed(0).replaceAllMapped(
-                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                                (Match m) => '${m[1]}.',
-                              )}',
-                            ),
-                            _buildPaymentRow(
-                              'Biaya Layanan',
-                              'Rp ${5000.toStringAsFixed(0).replaceAllMapped(
-                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                                (Match m) => '${m[1]}.',
-                              )}',
-                            ),
-                            _buildPaymentRow(
-                              'Total Diskon Pengiriman',
-                              '-Rp ${40000.toStringAsFixed(0).replaceAllMapped(
-                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                                (Match m) => '${m[1]}.',
-                              )}',
-                              isDiscount: true,
-                            ),
-                            const Divider(height: 24),
-                            _buildPaymentRow(
-                              'Total Bayar',
-                              'Rp ${finalTotal.toStringAsFixed(0).replaceAllMapped(
-                                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                                (Match m) => '${m[1]}.',
-                              )}',
-                              isTotal: true,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                   // In your build method, modify the Payment Details section to include shipping option:
+Card(
+  child: Padding(
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Rincian Pembayaran',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: Colors.black,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildPaymentRow(
+          'Subtotal Untuk Produk',
+          'Rp ${NumberFormat('#,###').format(widget.totalPrice)}',
+        ),
+        InkWell(
+          // onTap: _showShippingOptions,
+          child: _buildPaymentRow(
+            'Subtotal Pengiriman',
+            _isLoadingShipping 
+                ? 'Menghitung...'
+                : 'Rp ${NumberFormat('#,###').format(shippingCost)}',
+            // isClickable: true,
+          ),
+        ),
+        _buildPaymentRow(
+          'Biaya Layanan',
+          'Rp ${NumberFormat('#,###').format(5000)}',
+        ),
+        _buildPaymentRow(
+  'Total Diskon Pengiriman',
+  '-Rp ${NumberFormat('#,###').format(shippingCost > 40000 ? 40000 : shippingCost)}',
+  isDiscount: true,
+),
+        const Divider(height: 24),
+        _buildPaymentRow(
+          'Total Bayar',
+          'Rp ${NumberFormat('#,###').format(finalTotal)}',
+          isTotal: true,
+        ),
+      ],
+    ),
+  ),
+),
                   ],
                 ),
               ),
@@ -2258,10 +2550,7 @@ Card(
                       children: [
                         const Text('Hemat '),
                         Text(
-                          'Rp ${40000.toStringAsFixed(0).replaceAllMapped(
-                            RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                            (Match m) => '${m[1]}.',
-                          )}',
+                          'Rp ${NumberFormat('#,###').format(shippingCost > 40000 ? 40000 : shippingCost)}',
                           style: const TextStyle(
                             color: Color(0xFFFF1E00),
                             fontWeight: FontWeight.bold,
@@ -2305,36 +2594,42 @@ Card(
     );
   }
 
-  Widget _buildPaymentRow(String label, String value,
-      {bool isDiscount = false, bool isTotal = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.grey[700],
-              fontSize: isTotal ? 16 : 14,
-            ),
+ Widget _buildPaymentRow(String label, String value,
+    {bool isDiscount = false, bool isTotal = false, bool isClickable = false}) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey[700],
+            fontSize: isTotal ? 16 : 14,
           ),
-          Text(
-            value,
-            style: TextStyle(
-              color: isDiscount 
-                  ? const Color(0xFFFF1E00)
-                  : isTotal 
-                      ? Colors.black 
-                      : Colors.black,
-              fontSize: isTotal ? 16 : 14,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+        ),
+        Row(
+          children: [
+            Text(
+              value,
+              style: TextStyle(
+                color: isDiscount 
+                    ? const Color(0xFFFF1E00)
+                    : isTotal 
+                        ? Colors.black 
+                        : Colors.black,
+                fontSize: isTotal ? 16 : 14,
+                fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
+            if (isClickable) 
+              const Icon(Icons.chevron_right, size: 16),
+          ],
+        ),
+      ],
+    ),
+  );
+}
   
   DottedLinePainter() {}
 }

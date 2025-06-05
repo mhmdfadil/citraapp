@@ -170,7 +170,7 @@ class _PromoPageState extends State<PromoPage> {
   }
 
   Widget _buildProductCard(Map<String, dynamic> product) {
-    // Get promo data for this product
+      // Get promo data for this product
     final promo = _promos.firstWhere(
       (p) => p['product_id'] == product['id'],
       orElse: () => {},
@@ -192,7 +192,21 @@ class _PromoPageState extends State<PromoPage> {
       final startDate = DateTime.parse(promo['start_date']).toLocal();
       final endDate = DateTime.parse(promo['end_date']).toLocal();
       
-      promoPeriod = '${DateFormat('dd MMM').format(startDate)}-${DateFormat('dd MMM yyyy').format(endDate)}';
+      final monthNames = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+        'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
+      ];
+      
+      final formatTime = (DateTime date) {
+        final hour = date.hour.toString().padLeft(2, '0');
+        final minute = date.minute.toString().padLeft(2, '0');
+        return '$hour:$minute';
+      };
+      
+      final formattedStartDate = '${startDate.day.toString().padLeft(2, '0')} ${monthNames[startDate.month - 1]} ${startDate.year} ${formatTime(startDate)}';
+      final formattedEndDate = '${endDate.day.toString().padLeft(2, '0')} ${monthNames[endDate.month - 1]} ${endDate.year} ${formatTime(endDate)}';
+      
+      promoPeriod = '$formattedStartDate - $formattedEndDate';
     }
 
     return GestureDetector(

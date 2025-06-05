@@ -334,7 +334,7 @@ class _PromoDetailPageState extends State<PromoDetailPage> {
     product_id: int.tryParse(widget.productId) ?? 0,
     category: _categoryName,
     name: _product!['name']?.toString() ?? 'No Name',
-    price: _product!['price_display']?.toString() ?? '0',
+    price: _promo!['price_display']?.toString() ?? '0',
     imageUrl: imageUrl,
     quantity: quantity,
     isSelected: true,
@@ -621,54 +621,54 @@ class _PromoDetailPageState extends State<PromoDetailPage> {
               },
             ),
           ),
-          Container(
-            margin: const EdgeInsets.only(top: 15, bottom: 15, right: 20),
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(50),
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.shopping_cart, color: Colors.black, size: 20),
-                  padding: const EdgeInsets.all(8),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => CartContent()),
-                    ).then((_) => _fetchCartCount());
-                  },
-                ),
-                if (_cartItemCount > 0)
-                  Positioned(
-                    top: -5,
-                    right: -5,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
-                      child: Text(
-                        _cartItemCount.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          // Container(
+          //   margin: const EdgeInsets.only(top: 15, bottom: 15, right: 20),
+          //   decoration: BoxDecoration(
+          //     color: Colors.grey[200],
+          //     borderRadius: BorderRadius.circular(50),
+          //   ),
+          //   child: Stack(
+          //     clipBehavior: Clip.none,
+          //     children: [
+          //       IconButton(
+          //         icon: const Icon(Icons.shopping_cart, color: Colors.black, size: 20),
+          //         padding: const EdgeInsets.all(8),
+          //         onPressed: () {
+          //           Navigator.push(
+          //             context,
+          //             MaterialPageRoute(builder: (context) => CartContent()),
+          //           ).then((_) => _fetchCartCount());
+          //         },
+          //       ),
+          //       if (_cartItemCount > 0)
+          //         Positioned(
+          //           top: -5,
+          //           right: -5,
+          //           child: Container(
+          //             padding: const EdgeInsets.all(4),
+          //             decoration: BoxDecoration(
+          //               color: Colors.red,
+          //               shape: BoxShape.circle,
+          //               border: Border.all(color: Colors.white, width: 1),
+          //             ),
+          //             constraints: const BoxConstraints(
+          //               minWidth: 18,
+          //               minHeight: 18,
+          //             ),
+          //             child: Text(
+          //               _cartItemCount.toString(),
+          //               style: const TextStyle(
+          //                 color: Colors.white,
+          //                 fontSize: 10,
+          //                 fontWeight: FontWeight.bold,
+          //               ),
+          //               textAlign: TextAlign.center,
+          //             ),
+          //           ),
+          //         ),
+          //     ],
+          //   ),
+          // ),
           Container(
             margin: const EdgeInsets.only(top: 15, bottom: 15, right: 20),
             decoration: BoxDecoration(
@@ -846,6 +846,11 @@ class _PromoDetailPageState extends State<PromoDetailPage> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                       const SizedBox(height: 8),
+                          Text(
+                            'Berat : ${_product!['weight']?.toString() ?? '0'} gram',
+                            style: const TextStyle(fontSize: 14),
+                          ),
                       const SizedBox(height: 8),
                       Text(
                         _product!['desc']?.toString() ?? 'Tidak ada deskripsi',
@@ -886,19 +891,19 @@ class _PromoDetailPageState extends State<PromoDetailPage> {
                 },
               ),
             ),
-            const SizedBox(width: 30),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(50),
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.shopping_cart, color: Colors.black, size: 28),
-                padding: EdgeInsets.zero,
-                onPressed: _availableStock > 0 ? _addToCart : null,
-              ),
-            ),
+            // const SizedBox(width: 30),
+            // Container(
+            //   padding: const EdgeInsets.all(12),
+            //   decoration: BoxDecoration(
+            //     color: Colors.grey[200],
+            //     borderRadius: BorderRadius.circular(50),
+            //   ),
+            //   child: IconButton(
+            //     icon: const Icon(Icons.shopping_cart, color: Colors.black, size: 28),
+            //     padding: EdgeInsets.zero,
+            //     onPressed: _availableStock > 0 ? _addToCart : null,
+            //   ),
+            // ),
             const SizedBox(width: 30),
             Expanded(
               child: SizedBox(

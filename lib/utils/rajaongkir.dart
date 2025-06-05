@@ -1,90 +1,77 @@
-// import 'package:citraapp/screens/content/co_buy.dart';
-// import 'package:http/http.dart' as http;
-// import 'dart:convert';
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
-// class RajaOngkirService {
-//   static const String _baseUrl = 'https://api.rajaongkir.com/starter';
-//   static const String _sandboxApiKey = 'C9tVSHobc55150227976fb1eaTcFhXyG'; // Sandbox API key
-//   static const String _productionApiKey = 'YOUR_PRODUCTION_KEY'; // Add your production key
+class RajaOngkirService {
+  static const String _baseUrl = 'https://rajaongkir.komerce.id/api/v1';
+  static const String _apiKey = 'C9tVSHobc55150227976fb1eaTcFhXyG';
 
-//   // Default origin address (Toko Citra Cosmetic)
-//   static const Map<String, dynamic> defaultOrigin = {
-//     'city_id': '1172', // ID Kota Lhokseumawe
-//     'province_id': '11', // ID Provinsi Aceh
-//   };
+  
+ static Future<Map<String, dynamic>> getShippingCost({
+  required String origin,
+  required String destination,
+  required int weight,
+  required String courier,
+}) async {
+  try {
+    final url = Uri.parse('$_baseUrl/calculate/domestic-cost');
+    
+    final response = await http.post(
+      url,
+      headers: {
+        'key': _apiKey,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: {
+        'origin': origin,
+        'destination': destination,
+        'weight': weight.toString(),
+        'courier': courier.toLowerCase(),
+      },
+    );
 
-//   // Get shipping cost
-//   static Future<Map<String, dynamic>> getShippingCost({
-//     required String destinationCityId,
-//     required int weight,
-//     String courier = 'jne',
-//     required bool sandboxMode,
-//   }) async {
-//     try {
-//       final apiKey = sandboxMode ? _sandboxApiKey : _productionApiKey;
-      
-//       // Prepare the request body as a Map
-//       final body = {
-//         'origin': defaultOrigin['city_id'],
-//         'destination': destinationCityId,
-//         'weight': weight.toString(),
-//         'courier': courier.toLowerCase(),
-//       };
+    // Handle 404 specifically
+    if (response.statusCode == 404) {
+      throw Exception('Layanan pengiriman ${courier.toUpperCase()} tidak tersedia untuk rute ini');
+    }
 
-//       // Convert the Map to x-www-form-urlencoded format
-//       final encodedBody = body.keys.map((key) => 
-//         '${Uri.encodeComponent(key)}=${Uri.encodeComponent(body[key]!)}').join('&');
+    final result = json.decode(response.body);
+    
+    if (response.statusCode == 200) {
+      if (result['data'] != null && result['data'] is List && result['data'].isNotEmpty) {
+        // Find the regular service
+        final regularService = (result['data'] as List).firstWhere(
+          (service) => service['service']?.toLowerCase() == 'reg',
+          orElse: () => result['data'][0], // Fallback to first service if regular not found
+        );
 
-//       final response = await http.post(
-//         Uri.parse('$_baseUrl/cost'),
-//         headers: {
-//           'key': apiKey,
-//           'content-type': 'application/x-www-form-urlencoded',
-//         },
-//         body: encodedBody,
-//       );
-
-
-//       if (response.statusCode == 200) {
-//         final result = json.decode(response.body);
-//         if (result['rajaongkir']['status']['code'] == 200) {
-//           return {
-//             'success': true,
-//             'results': result['rajaongkir']['results'],
-//           };
-//         } else {
-//           return {
-//             'success': false,
-//             'message': result['rajaongkir']['status']['description'],
-//             'api_error': true,
-//           };
-//         }
-//       } else {
-//         // Handle specific HTTP error codes
-//         String errorMessage = 'Failed to connect to RajaOngkir API: ${response.statusCode}';
-//         if (response.statusCode == 400) {
-//           errorMessage = 'Bad request - please check your parameters';
-//         } else if (response.statusCode == 401) {
-//           errorMessage = 'Unauthorized - invalid API key';
-//         } else if (response.statusCode == 404) {
-//           errorMessage = 'API endpoint not found';
-//         } else if (response.statusCode == 500) {
-//           errorMessage = 'Server error - please try again later';
-//         }
-
-//         return {
-//           'success': false,
-//           'message': errorMessage,
-//           'status_code': response.statusCode,
-//         };
-//       }
-//     } catch (e) {
-//       return {
-//         'success': false,
-//         'message': 'Network error: ${e.toString()}',
-//       };
-//     }
-//   }
-
-//   static getCityId(AddressData addressData) {}
-// }
+        return {
+          'code': courier.toLowerCase(),
+          'name': courier.toUpperCase(),
+          'costs': [
+            {
+              'service': regularService['service'] ?? 'REG',
+              'description': regularService['description'] ?? '',
+              'cost': [
+                {
+                  'value': regularService['cost'] ?? 0,
+                  'etd': regularService['etd'] ?? '3',
+                  'note': regularService['note'] ?? '',
+                }
+              ]
+            }
+          ],
+        };
+      } else {
+        throw Exception('Tidak ada layanan pengiriman tersedia untuk rute ini');
+      }
+    } else {
+      final errorMsg = result['meta']['message'] ?? 'Unknown error';
+      throw Exception('$errorMsg (${response.statusCode})');
+    }
+  } catch (e) {
+    debugPrint('Error in getShippingCost: $e');
+    throw Exception('Gagal mendapatkan ongkos kirim: ${e.toString()}');
+  }
+}
+}
