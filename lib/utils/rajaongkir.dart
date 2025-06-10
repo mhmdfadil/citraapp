@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 
 class RajaOngkirService {
   static const String _baseUrl = 'https://rajaongkir.komerce.id/api/v1';
-  static const String _apiKey = 'C9tVSHobc55150227976fb1eaTcFhXyG';
+  static const String _apiKey = 'l2L5yPGxb211c434735b4d6cZN0gmv76';
 
   
  static Future<Map<String, dynamic>> getShippingCost({
