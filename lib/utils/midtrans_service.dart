@@ -9,8 +9,8 @@ class MidtransService {
   static const String _midtransScriptUrl = 'https://app.sandbox.midtrans.com/snap/snap.js';
   
   // Pastikan kredensial sandbox Anda valid
-  static const String _clientKey = 'SB-Mid-client-YMRu2YOAC3k8b2SA'; // Ganti dengan client key Anda
-  static const String _serverKey = 'SB-Mid-server-3VhdO-VCz8m-XZw9YF5GVwiV'; // Ganti dengan server key Anda
+  static const String _clientKey = 'SB-Mid-client-V_-jn7aJterYapWc'; // Ganti dengan client key Anda
+  static const String _serverKey = 'SB-Mid-server-QOGAZkKJcUbOS1wHwJRORSDd'; // Ganti dengan server key Anda
 
   static Future<Map<String, dynamic>> createTransaction({
     required String orderId,
