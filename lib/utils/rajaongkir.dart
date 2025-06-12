@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 class RajaOngkirService {
-  static const String _baseUrl = 'https://rajaongkir.komerce.id/api/v1';
+  static const String _baseUrl = 'https://rajaongkir.komerce.id/api/v1'; 
   static const String _apiKey = 'l2L5yPGxb211c434735b4d6cZN0gmv76';
 
   
@@ -11,7 +11,7 @@ class RajaOngkirService {
   required String origin,
   required String destination,
   required int weight,
-  required String courier,
+  required String courier,                                  //ongkir 
 }) async {
   try {
     final url = Uri.parse('$_baseUrl/calculate/domestic-cost');
